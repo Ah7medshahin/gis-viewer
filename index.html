@@ -973,6 +973,7 @@ body.show-home .empty{display:flex!important;background:rgba(16,41,46,.25);point
 body.show-home .home-x{display:inline-block}
 .brand{cursor:pointer}
 
+.ctx-menu{position:fixed;z-index:3500;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:6px;min-width:220px;display:flex;flex-direction:column}.ctx-menu button{background:none;border:0;color:inherit;font:inherit;text-align:start;padding:9px 12px;border-radius:8px;cursor:pointer}.ctx-menu button:hover{background:var(--bg)}.ctx-menu .danger{color:var(--warn)}.ctx-h{font-weight:700;padding:6px 12px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}.ctx-sep{height:1px;background:var(--line);margin:4px 6px}
 .base-help{position:fixed;left:50%;bottom:calc(96px + var(--sb));transform:translateX(-50%);z-index:1200;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;gap:10px;align-items:center;max-width:92vw;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px}.base-help .btn{white-space:nowrap}
 </style>
 </head>
@@ -3175,7 +3176,7 @@ return ret;
     const b = document.createElement('button'); b.className = 'btn'; b.style.cssText = 'background:var(--accent);color:#fff;border:0;border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer';
     if (st === 'prompt' || st === 'denied') { msg.textContent = 'الخريطة الخلفية محتاجة إذن تحميل من النت في نسخة الديسكتوب.'; b.textContent = st === 'denied' ? 'افتح الأذونات' : 'فعّل الخريطة الخلفية'; b.onclick = async () => { try { const d = await window.claude.use('desktop'); if (st === 'denied') await d.permissions.manage(); else await GV.deskTiles.request(); } catch (e) { } box.remove(); tilesOk = null; setBase(baseKey); }; }
     else if (st === 'install') { msg.textContent = 'الخريطة الخلفية مش بتفتح جوه صفحة Claude. ثبّت البرنامج كأبلكيشن على الديسكتوب وهتشتغل.'; b.textContent = 'ثبّت كأبلكيشن'; b.onclick = async () => { try { await GV.deskTiles.install(); } catch (e) { } box.remove(); }; }
-    else { msg.textContent = 'الخريطة الخلفية مش متاحة هنا. افتح البرنامج من أبلكيشن الديسكتوب (Install as app من تطبيق Claude) أو من متصفح الموبايل.'; b.textContent = 'تمام'; b.onclick = () => box.remove(); }
+    else { msg.textContent = 'صفحة Claude مش بتسمح بالخريطة الخلفية. افتح نسخة GitHub (موبايل أو لابتوب) وهتلاقيها شغالة.'; b.textContent = 'افتح نسخة GitHub'; b.onclick = () => { const a = document.createElement('a'); a.href = 'https://ah7medshahin.github.io/gis-viewer/'; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); box.remove(); }; }
     const x = document.createElement('button'); x.className = 'icon-btn'; x.textContent = '✕'; x.onclick = () => box.remove();
     box.append(msg, b, x); document.body.appendChild(box);
   }
@@ -3217,7 +3218,7 @@ return ret;
           style: () => hide ? { opacity: 0, fillOpacity: 0 } : ({ renderer: layer._renderer || canvas, color: fc, weight: layer.kind === 'polygon' ? 2 : 3, opacity: 0.95, fillColor: (f.properties && f.properties.fill) || fc, fillOpacity: f.geometry.type.indexOf('Polygon') >= 0 ? 0.18 : 0 })
         });
       } catch (e) { return; }
-      if (!f._sym) g.on('click', ev => { L.DomEvent.stopPropagation(ev); if (GV.editClick && GV.editClick(layer, i, ev)) return; if (GV.pick) { GV.pick(snapTo(f, ev.latlng)); return; } if (meas) { addMeasPt(snapTo(f, ev.latlng)); return; } showFeature(layer, i, ev.latlng); });
+      if (!f._sym) g.on('click', ev => { if (layer.noSelect) return; L.DomEvent.stopPropagation(ev); if (GV.editClick && GV.editClick(layer, i, ev)) return; if (GV.pick) { GV.pick(snapTo(f, ev.latlng)); return; } if (meas) { addMeasPt(snapTo(f, ev.latlng)); return; } showFeature(layer, i, ev.latlng); });
       else g.eachLayer(x => x.options.interactive = false);
       g.addTo(fg);
     });
@@ -3368,7 +3369,7 @@ return ret;
         const info = el('div', 'lyr-info');
         info.appendChild(el('div', 'lyr-name', l.name));
         const n = l.features.length;
-        info.appendChild(el('div', 'lyr-meta', n.toLocaleString('en') + ' · ' + (KIND_AR[l.kind] || '') + (l.crsLabel && l.kind !== 'table' ? ' · ' + l.crsLabel : '') + (l.noCRS ? ' · مفيش نظام إحداثيات' : '') + (l.error ? ' · خطأ' : '') + (l.theme ? ' · ملون حسب ' + l.theme.field : '') + (l.labelField ? ' · ليبل: ' + l.labelField : '')));
+        info.appendChild(el('div', 'lyr-meta', n.toLocaleString('en') + ' · ' + (KIND_AR[l.kind] || '') + (l.crsLabel && l.kind !== 'table' ? ' · ' + l.crsLabel : '') + (l.noCRS ? ' · مفيش نظام إحداثيات' : '') + (l.error ? ' · خطأ' : '') + (l.theme ? ' · ملون حسب ' + l.theme.field : '') + (l.labelField ? ' · ليبل: ' + l.labelField : '') + (l.noSelect ? ' · 🔒 مقفولة للسيليكت' : '')));
         info.addEventListener('click', () => openTable(l, true));
         const acts = el('div', 'lyr-acts');
         if (l.leaf) { const z = el('button', 'icon-btn small', '⤢'); z.title = 'تكبير على الطبقة'; z.onclick = () => { setVis(l, true); const b = l.leaf.getBounds(); if (b.isValid()) map.fitBounds(b, { padding: [30, 30], maxZoom: 18 }); closeSheets(); }; acts.appendChild(z); }
@@ -3377,18 +3378,23 @@ return ret;
         if (l.theme) { const cs = l.theme.classes.slice(0, 6).map(c => c.color); sw.style.setProperty('--c', 'conic-gradient(' + cs.map((c, k) => c + ' ' + (k * 100 / cs.length) + '% ' + ((k + 1) * 100 / cs.length) + '%').join(',') + ')'); }
         const tb = el('button', 'icon-btn small', '☰'); tb.title = 'جدول البيانات'; tb.onclick = () => openTable(l, true); acts.appendChild(tb);
         if (lgSel) { const cb = el('input'); cb.type = 'checkbox'; cb.className = 'lg-ck'; cb.checked = lgSel.has(l); cb.onchange = () => { if (cb.checked) lgSel.add(l); else lgSel.delete(l); const n2 = $('#lgN'); if (n2) n2.textContent = lgSel.size; }; row.append(cb); }
+        const mo = el('button', 'icon-btn small', '⋯'); mo.title = 'أوامر الطبقة (أو كليك يمين)'; mo.onclick = e => { e.stopPropagation(); const r = mo.getBoundingClientRect(); lyrMenu(l, r.left, r.bottom); }; acts.appendChild(mo);
+        row.addEventListener('contextmenu', e => { e.preventDefault(); lyrMenu(l, e.clientX, e.clientY); });
+        let lp = null; row.addEventListener('touchstart', e => { const t = e.touches[0]; lp = setTimeout(() => lyrMenu(l, t.clientX, t.clientY), 550); }, { passive: true }); ['touchend', 'touchmove', 'touchcancel'].forEach(ev => row.addEventListener(ev, () => clearTimeout(lp), { passive: true }));
         row.append(sw, info, acts); return row;
   }
   function groupsUI(box) {
     const bar = el('div', 'src-tools lg-bar');
-    if (!lgSel) { const nb = el('button', 'chip', '📁 جروب جديد / ضيف لجروب'); nb.title = 'اختار طبقات (كاد أو داتا بيز) واعملهم جروب باسمك'; nb.onclick = () => { lgSel = new Set(); renderLayers(); }; bar.appendChild(nb); }
+    if (!lgSel) { const nb = el('button', 'chip', '☑ اختار طبقات (جروب / مسح / سيب بس)'); nb.title = 'اختار طبقات (كاد أو داتا بيز) واعملهم جروب باسمك'; nb.onclick = () => { lgSel = new Set(); renderLayers(); }; bar.appendChild(nb); }
     else {
       bar.appendChild(el('span', 'small', 'علّم على الطبقات (')); const nn = el('b', null, String(lgSel.size)); nn.id = 'lgN'; bar.appendChild(nn); bar.appendChild(el('span', 'small', ')'));
       const nm = el('input'); nm.placeholder = 'اسم الجروب الجديد'; nm.style.cssText = 'max-width:170px';
       const sel = el('select'); const o0 = el('option', null, '— أو ضيفهم لجروب موجود —'); o0.value = ''; sel.appendChild(o0); LG.forEach(g => { const o = el('option', null, g.name); o.value = g.id; sel.appendChild(o); });
       const ok = el('button', 'chip ok', 'تمام'); ok.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const keys = [...lgSel].map(lkey); LG.forEach(g => { g.keys = g.keys.filter(k => keys.indexOf(k) < 0); }); let g = sel.value && LG.find(x => x.id === sel.value); if (!g) { const name = nm.value.trim() || ('جروب ' + (LG.length + 1)); g = { id: Date.now().toString(36), name, keys: [], open: true }; LG.push(g); } g.keys.push(...keys); LG = LG.filter(x => x.keys.length); saveLG(); lgSel = null; renderLayers(); toast('اتحطوا في جروب «' + g.name + '»'); };
       const cn = el('button', 'chip', 'إلغاء'); cn.onclick = () => { lgSel = null; renderLayers(); };
-      bar.append(nm, sel, ok, cn);
+      const del = el('button', 'chip', '🗑 امسح المحدد'); del.title = 'امسح الطبقات المعلّم عليها من الشغل (الملفات الأصلية مبتتلمسش)'; del.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; removeLayers(ls); };
+      const keep = el('button', 'chip', '★ سيب المحدد بس'); keep.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; keepOnly(ls, ls.length + ' طبقة'); };
+      bar.append(nm, sel, ok, del, keep, cn);
     }
     box.appendChild(bar);
     const all = sources.flatMap(sr => sr.layers);
@@ -3401,7 +3407,8 @@ return ret;
       const zm = el('button', 'icon-btn small', '⤢'); zm.title = 'زوم على الجروب'; zm.onclick = () => { let bb = null; ls.forEach(l => { if (l.leaf && l.visible) { const b2 = l.leaf.getBounds(); if (b2.isValid()) bb = bb ? bb.extend(b2) : L.latLngBounds(b2.getSouthWest(), b2.getNorthEast()); } }); if (bb) map.fitBounds(bb, { padding: [30, 30], maxZoom: 18 }); };
       const rn = el('button', 'icon-btn small', '✎'); rn.title = 'غيّر الاسم'; rn.onclick = () => { const v = prompt('اسم الجروب', g.name); if (v && v.trim()) { g.name = v.trim(); saveLG(); renderLayers(); } };
       const dl = el('button', 'icon-btn small', '✕'); dl.title = 'فك الجروب (الطبقات بترجع مكانها)'; dl.onclick = () => { LG = LG.filter(x => x !== g); saveLG(); renderLayers(); };
-      h.append(vis, zm, rn, dl); sec.appendChild(h);
+      const only = el('button', 'icon-btn small', '★'); only.title = 'سيب الجروب ده بس وامسح باقي الطبقات من الشغل'; only.onclick = () => keepOnly(ls, 'الجروب «' + g.name + '»');
+      h.append(vis, zm, only, rn, dl); sec.appendChild(h);
       if (g.open !== false) ls.forEach(l => { const r = mkRow(l); const out = el('button', 'icon-btn small', '⇱'); out.title = 'طلّعها من الجروب'; out.onclick = () => { g.keys = g.keys.filter(k => k !== lkey(l)); LG = LG.filter(x => x.keys.length); saveLG(); renderLayers(); }; r.querySelector('.lyr-acts').appendChild(out); sec.appendChild(r); });
       box.appendChild(sec);
     });
@@ -3416,7 +3423,9 @@ return ret;
       const t = el('div', 'src-title'); t.appendChild(el('b', null, src.name)); t.appendChild(el('span', 'tag', src.type || '')); if (superseded(src)) t.appendChild(el('span', 'tag lock', '🔒 الأصل — مبيتعدلش')); else if (src.isCopy) t.appendChild(el('span', 'tag copy', '✎ نسخة شغل'));
       h.appendChild(t);
       const rm = el('button', 'icon-btn small', '✕'); rm.title = 'إزالة'; if (src.id === 'field') rm.style.visibility = 'hidden'; rm.addEventListener('click', () => { src.layers.forEach(l => l.leaf && map.removeLayer(l.leaf)); sources.splice(sources.indexOf(src), 1); clearHL(); renderLayers(); updateEmpty(); refreshLabels(); dirty(); });
-      h.appendChild(rm); sec.appendChild(h);
+      const si = sources.indexOf(src); const up = el('button', 'icon-btn small', '▲'); up.title = 'الملف ده يترسم فوق'; up.disabled = si === sources.length - 1; up.onclick = () => { sources.splice(si, 1); sources.splice(si + 1, 0, src); applyOrder(); renderLayers(); dirty(); };
+      const dn = el('button', 'icon-btn small', '▼'); dn.title = 'الملف ده يترسم تحت'; dn.disabled = si === 0; dn.onclick = () => { sources.splice(si, 1); sources.splice(si - 1, 0, src); applyOrder(); renderLayers(); dirty(); };
+      h.append(up, dn, rm); sec.appendChild(h);
       if (src.error) sec.appendChild(el('p', 'err', src.error));
       if (src.isCad) {
         const ct = el('div', 'src-tools');
@@ -3449,7 +3458,58 @@ return ret;
       box.appendChild(sec);
     });
   }
-  function setVis(l, v) { l.visible = v; dirty(); if (!l.leaf) return; if (v) l.leaf.addTo(map); else map.removeLayer(l.leaf); if (l.labelField) refreshLabels(); }
+  function setVis(l, v) { l.visible = v; dirty(); if (!l.leaf) return; if (v) { l.leaf.addTo(map); setTimeout(applyOrder, 0); } else map.removeLayer(l.leaf); if (l.labelField) refreshLabels(); }
+  // ---- drawing order: the layer at the top of the list is drawn on top ----
+  function applySel(l) { if (!l.leaf || !l.leaf.eachLayer) return; const v = l.noSelect ? 'none' : ''; l.leaf.eachLayer(x => { const go = y => { if (y._path) y._path.style.pointerEvents = v; if (y._icon) y._icon.style.pointerEvents = v; if (y.eachLayer) y.eachLayer(go); }; go(x); }); }
+  function setSelectable(l, on) { l.noSelect = !on; applySel(l); renderLayers(); dirty(); toast(on ? 'السيليكت اتفتح على «' + l.name + '»' : 'السيليكت اتقفل على «' + l.name + '» — الكليك بيعدّي للي تحتها'); }
+  function applyOrder() { sources.forEach(src => src.layers.slice().reverse().forEach(l => { if (l.leaf && l.visible && map.hasLayer(l.leaf) && l.leaf.bringToFront) { try { l.leaf.bringToFront(); } catch (e) { } } if (l.noSelect) applySel(l); })); }
+  const srcOf = l => sources.find(x => x.layers.indexOf(l) >= 0);
+  function moveLayer(l, how) {
+    const src = srcOf(l); if (!src) return; const a = src.layers; const i = a.indexOf(l);
+    if (how === 'up' && i > 0) { a.splice(i, 1); a.splice(i - 1, 0, l); }
+    else if (how === 'down' && i < a.length - 1) { a.splice(i, 1); a.splice(i + 1, 0, l); }
+    else if (how === 'top') { a.splice(i, 1); a.unshift(l); sources.splice(sources.indexOf(src), 1); sources.push(src); }
+    else if (how === 'bottom') { a.splice(i, 1); a.push(l); sources.splice(sources.indexOf(src), 1); sources.unshift(src); }
+    applyOrder(); renderLayers(); dirty();
+  }
+  // ---- removing layers from the work (never touches the original files) with undo ----
+  let undoRm = null;
+  function removeLayers(ls, label) {
+    ls = ls.filter(l => l && srcOf(l) && !(srcOf(l).id === 'field')); if (!ls.length) return;
+    const rec = { srcs: sources.slice(), lists: new Map(sources.map(x => [x, x.layers.slice()])) };
+    ls.forEach(l => { const src = srcOf(l); if (l.leaf) map.removeLayer(l.leaf); src.layers.splice(src.layers.indexOf(l), 1); if (!src.layers.length && !src.error) sources.splice(sources.indexOf(src), 1); });
+    undoRm = rec; clearHL(); renderLayers(); updateEmpty(); refreshLabels(); dirty();
+    undoBar((label || (ls.length === 1 ? 'طبقة «' + ls[0].name + '»' : ls.length + ' طبقة')) + ' اتمسحت من الشغل — الملف الأصلي زي ما هو');
+  }
+  function keepOnly(keep, label) { const ks = new Set(keep); const rm = sources.filter(x => x.id !== 'field' && x.id !== 'qc').flatMap(x => x.layers).filter(l => !ks.has(l)); if (!rm.length) return toast('مفيش طبقات تانية'); removeLayers(rm, 'سيبنا ' + label + ' بس — اتمسحت ' + rm.length + ' طبقة'); }
+  function undoBar(msg) {
+    let b = document.getElementById('undoBar'); if (b) b.remove(); b = el('div', 'base-help'); b.id = 'undoBar';
+    const u = el('button', 'btn', '↶ تراجع'); u.style.cssText = 'background:var(--accent);color:#fff;border:0;border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer';
+    u.onclick = () => { if (!undoRm) return; sources.length = 0; undoRm.srcs.forEach(x => { x.layers.length = 0; x.layers.push(...undoRm.lists.get(x)); sources.push(x); x.layers.forEach(l => { if (l.leaf && l.visible) l.leaf.addTo(map); }); }); undoRm = null; applyOrder(); renderLayers(); updateEmpty(); refreshLabels(); dirty(); b.remove(); };
+    const x = el('button', 'icon-btn', '✕'); x.onclick = () => b.remove();
+    b.append(el('div', null, msg), u, x); document.body.appendChild(b); clearTimeout(undoBar.t); undoBar.t = setTimeout(() => b.remove(), 15000);
+  }
+  function zoomLayer(l) { if (!l.leaf) return toast('الطبقة دي جدول من غير مكان'); setVis(l, true); const b = l.leaf.getBounds(); if (b.isValid()) map.fitBounds(b, { padding: [30, 30], maxZoom: 18 }); else toast('الطبقة فاضية'); }
+  // ---- right-click / long-press menu on a layer ----
+  function lyrMenu(l, x, y) {
+    let m = document.getElementById('lyrMenu'); if (m) m.remove(); m = el('div', 'ctx-menu'); m.id = 'lyrMenu';
+    const it = (t, fn, cls) => { const b = el('button', cls || '', t); b.onclick = () => { m.remove(); fn(); }; m.appendChild(b); };
+    m.appendChild(el('div', 'ctx-h', l.name));
+    if (l.leaf) it('⤢ زوم على الطبقة (Zoom to layer)', () => zoomLayer(l));
+    it(l.visible ? '◌ إخفاء' : '👁 إظهار', () => { setVis(l, !l.visible); renderLayers(); });
+    if (l.leaf) it(l.noSelect ? '🔓 افتح السيليكت للطبقة' : '🔒 اقفل السيليكت للطبقة', () => setSelectable(l, !!l.noSelect));
+    it('☰ جدول البيانات', () => openTable(l, true));
+    if (l.leaf) it('🎨 تلوين حسب حقل', () => openStyle(l, true));
+    m.appendChild(el('div', 'ctx-sep'));
+    it('⤒ ترسم فوق الكل', () => moveLayer(l, 'top')); it('▲ لفوق', () => moveLayer(l, 'up')); it('▼ لتحت', () => moveLayer(l, 'down')); it('⤓ ترسم تحت الكل', () => moveLayer(l, 'bottom'));
+    m.appendChild(el('div', 'ctx-sep'));
+    it('★ سيب الطبقة دي بس', () => keepOnly([l], '«' + l.name + '»'));
+    it('🗑 امسح الطبقة من الشغل', () => removeLayers([l]), 'danger');
+    document.body.appendChild(m);
+    const W = window.innerWidth, H = window.innerHeight, r = m.getBoundingClientRect();
+    m.style.left = Math.max(6, Math.min(W - r.width - 6, x)) + 'px'; m.style.top = Math.max(6, Math.min(H - r.height - 6, y)) + 'px';
+    setTimeout(() => { const off = e => { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('pointerdown', off, true); } }; document.addEventListener('pointerdown', off, true); }, 0);
+  }
 
   // feature details
   function clearHL() { if (highlight) { map.removeLayer(highlight); highlight = null; } }
@@ -3591,15 +3651,32 @@ return ret;
   $('#btnZoomAll').addEventListener('click', () => { let b = null; sources.forEach(s => s.layers.forEach(l => { if (l.leaf && l.visible) { const x = l.leaf.getBounds(); if (x.isValid()) b = b ? b.extend(x) : L.latLngBounds(x.getSouthWest(), x.getNorthEast()); } })); if (b) map.fitBounds(b, { padding: [30, 30], maxZoom: 18 }); });
   $('#btnZin').addEventListener('click', () => map.zoomIn()); $('#btnZout').addEventListener('click', () => map.zoomOut());
   let locMarker = null;
+  // my location: live tracking (tap again to stop). Inside the Claude page the browser blocks location → point to the GitHub app.
+  let locWatch = null, locFirst = true;
+  const GH_URL = 'https://ah7medshahin.github.io/gis-viewer/';
+  function locHelp(msg, withLink) {
+    let b = document.getElementById('baseHelp'); if (b) b.remove(); b = el('div', 'base-help'); b.id = 'baseHelp'; b.appendChild(el('div', null, msg));
+    if (withLink) { const a = el('a', null, 'افتح نسخة GitHub'); a.href = GH_URL; a.target = '_blank'; a.rel = 'noopener'; a.style.cssText = 'background:var(--accent);color:#fff;border-radius:10px;padding:8px 12px;text-decoration:none;white-space:nowrap'; b.appendChild(a); }
+    const x = el('button', 'icon-btn', '✕'); x.onclick = () => b.remove(); b.appendChild(x); document.body.appendChild(b);
+  }
+  function stopLoc() { if (locWatch != null) navigator.geolocation.clearWatch(locWatch); locWatch = null; $('#btnLocate').classList.remove('on'); }
   $('#btnLocate').addEventListener('click', () => {
-    if (!navigator.geolocation) return toast('تحديد الموقع مش متاح');
-    toast('بحدد موقعك…');
-    navigator.geolocation.getCurrentPosition(p => {
+    if (locWatch != null) { stopLoc(); if (locMarker) { map.removeLayer(locMarker); locMarker = null; } toast('وقفت تتبّع الموقع'); return; }
+    const inClaude = window.self !== window.top || /claude(usercontent)?\.(ai|com)$/.test(location.hostname);
+    if (!navigator.geolocation) return locHelp('المتصفح ده مش بيدعم تحديد الموقع.');
+    toast('بحدد موقعك…'); locFirst = true; $('#btnLocate').classList.add('on');
+    locWatch = navigator.geolocation.watchPosition(p => {
       const ll = [p.coords.latitude, p.coords.longitude];
       if (locMarker) map.removeLayer(locMarker);
       locMarker = L.layerGroup([L.circle(ll, { radius: p.coords.accuracy, color: '#1c7ed6', weight: 1, fillOpacity: 0.1, interactive: false }), L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#1c7ed6', fillOpacity: 1, interactive: false })]).addTo(map);
-      map.setView(ll, Math.max(map.getZoom(), 17));
-    }, () => toast('مقدرتش أحدد الموقع هنا. جرب تفتح التطبيق من المتصفح مباشرة واسمح بالموقع.', 5000), { enableHighAccuracy: true, timeout: 15000 });
+      if (locFirst) { map.setView(ll, Math.max(map.getZoom(), 17)); toast('دقة الموقع ± ' + Math.round(p.coords.accuracy) + ' م — دوس تاني عشان توقف التتبّع', 3500); locFirst = false; }
+    }, err => {
+      stopLoc();
+      if (inClaude) return locHelp('صفحة Claude مش بتسمح بتحديد الموقع. افتح البرنامج من نسخة GitHub (على الموبايل أو اللابتوب) واسمح بالموقع لما يسألك.', true);
+      if (err.code === 1) return locHelp('الموقع مقفول للبرنامج. من علامة القفل 🔒 جنب العنوان في المتصفح ← أذونات الموقع (Location) ← سماح، وبعدين جرّب تاني.');
+      if (err.code === 2) return locHelp('الجهاز مش عارف يحدد مكانه. شغّل الـ GPS على الموبايل، أو على اللابتوب: الإعدادات ← الخصوصية والأمان ← الموقع ← شغّله واسمح للتطبيقات.');
+      locHelp('تحديد الموقع أخد وقت طويل. اطلع مكان مفتوح أو اتأكد إن الـ GPS شغال وجرّب تاني.');
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 });
   });
   map.on('click', e => { if (GV.pick) GV.pick(e.latlng); else if (meas) addMeasPt(e.latlng); else clearHL(); });
   // live coordinate readout at map center
@@ -3771,7 +3848,7 @@ return ret;
 
   setBase(BASEMAPS[baseKey] ? baseKey : 'osm');
   updateEmpty();
-  Object.assign(GV, { markSel, workCopy, liveLayer, superseded, handleFiles, sources, map, addGroups, toast, showMsg, openSheet, closeSheets: () => closeSheets('prog'), goBack, renderLayers, updateEmpty, resolveCRS, epsgDef, mapCoords, firstCoord, el, $, buildLeaf, rebuild, applyCRS, fmtLen, fmtArea, ringA, lineLen, polyArea, store, CRS_CHOICES, PALETTE, setVis, showFeature, clearHL, snapTo, fieldsOf, copy, geomKind, openTable, makeTheme, setBase, getBase: () => baseKey, removeSource: src => { src.layers.forEach(l => l.leaf && map.removeLayer(l.leaf)); sources.splice(sources.indexOf(src), 1); }, refreshLabels: () => refreshLabels() });
+  Object.assign(GV, { applyOrder, removeLayers, zoomLayer, markSel, workCopy, liveLayer, superseded, handleFiles, sources, map, addGroups, toast, showMsg, openSheet, closeSheets: () => closeSheets('prog'), goBack, renderLayers, updateEmpty, resolveCRS, epsgDef, mapCoords, firstCoord, el, $, buildLeaf, rebuild, applyCRS, fmtLen, fmtArea, ringA, lineLen, polyArea, store, CRS_CHOICES, PALETTE, setVis, showFeature, clearHL, snapTo, fieldsOf, copy, geomKind, openTable, makeTheme, setBase, getBase: () => baseKey, removeSource: src => { src.layers.forEach(l => l.leaf && map.removeLayer(l.leaf)); sources.splice(sources.indexOf(src), 1); }, refreshLabels: () => refreshLabels() });
   document.dispatchEvent(new Event('gv-ready'));
 })();
 
@@ -8396,7 +8473,7 @@ return ret;
   const crsOf = l => { const c = l.crsDef && GV.resolveCRS(String(l.crsDef)); return c || { fn: x => x, inv: x => x }; };
   const clone = o => o ? JSON.parse(JSON.stringify(o)) : o;
   const eachC = (g, fn) => { if (!g) return; const t = g.type, c = g.coordinates; if (t === 'Point') fn(c); else if (t === 'LineString' || t === 'MultiPoint') c.forEach(fn); else if (t === 'Polygon' || t === 'MultiLineString') c.forEach(r => r.forEach(fn)); else if (t === 'MultiPolygon') c.forEach(p => p.forEach(r => r.forEach(fn))); };
-  const visLayers = () => GV.sources.flatMap(s => s.layers).filter(l => l.visible && l.leaf && l.features.length && !/^(نتائج الفحص|مشاكل الداتا)$/.test(l.name));
+  const visLayers = () => GV.sources.flatMap(s => s.layers).filter(l => l.visible && l.leaf && !l.noSelect && l.features.length && !/^(نتائج الفحص|مشاكل الداتا)$/.test(l.name));
   function updInfo() { info.textContent = sel.length ? sel.length + ' محدد' + (sel.some(s => !editable(s.l)) ? ' (فيه أصل للقراية بس)' : '') : 'مفيش تحديد'; }
   function drawHL() { if (hlG) map.removeLayer(hlG); hlG = L.layerGroup(sel.map(s => { const f = s.l.features[s.i]; return f && f.wgs ? L.geoJSON(f.wgs, { pointToLayer: (_, ll) => L.circleMarker(ll, { radius: 9, color: '#00e5ff', weight: 3, fill: false }), style: { color: '#00e5ff', weight: 6, opacity: 0.85 }, interactive: false }) : null; }).filter(Boolean)).addTo(map); updInfo(); }
   function clearSel() { sel = []; drawHL(); drawVtx(); }
