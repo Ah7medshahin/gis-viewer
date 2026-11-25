@@ -3360,7 +3360,9 @@ return ret;
   let LG = []; try { LG = JSON.parse(store.get('gv_lgroups') || '[]'); } catch (e) { }
   const saveLG = () => store.set('gv_lgroups', JSON.stringify(LG));
   const lkey = l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); return (sr ? sr.name : '') + '::' + l.name; };
-  const grpOf = l => { const k = lkey(l); return LG.find(g => g.keys.indexOf(k) >= 0); };
+  const keysOf = l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); const ks = [lkey(l)]; if (sr && sr.origName) ks.push(sr.origName + '::' + l.name); return ks; };
+  const grpOf = l => { const ks = keysOf(l); return LG.find(g => ks.some(k => g.keys.indexOf(k) >= 0)); };
+  const inGroup = l => !!grpOf(l);
   let lgSel = null; // Set of layers while picking
   function mkRow(l) {
         const row = el('div', 'lyr' + (l.visible ? '' : ' off'));
@@ -3399,7 +3401,7 @@ return ret;
     box.appendChild(bar);
     const all = sources.flatMap(sr => sr.layers);
     LG.forEach(g => {
-      const ls = g.keys.map(k => all.find(l => lkey(l) === k)).filter(Boolean); if (!ls.length && !lgSel) return;
+      const ls = [...new Set(g.keys.map(k => { const c = all.filter(l => keysOf(l).indexOf(k) >= 0); return c.find(l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); return sr && !superseded(sr); }) || c[0]; }).filter(Boolean))]; if (!ls.length && !lgSel) return;
       const sec = el('section', 'src lgrp'); const h = el('div', 'src-head'); const t = el('div', 'src-title');
       const fold = el('button', 'icon-btn small', g.open === false ? '▸' : '▾'); fold.onclick = () => { g.open = g.open === false; saveLG(); renderLayers(); };
       t.append(fold, el('b', null, '📁 ' + g.name), el('span', 'tag', ls.length + ' طبقة')); h.appendChild(t);
@@ -3422,7 +3424,7 @@ return ret;
       const h = el('div', 'src-head');
       const t = el('div', 'src-title'); t.appendChild(el('b', null, src.name)); t.appendChild(el('span', 'tag', src.type || '')); if (superseded(src)) t.appendChild(el('span', 'tag lock', '🔒 الأصل — مبيتعدلش')); else if (src.isCopy) t.appendChild(el('span', 'tag copy', '✎ نسخة شغل'));
       h.appendChild(t);
-      const rm = el('button', 'icon-btn small', '✕'); rm.title = 'إزالة'; if (src.id === 'field') rm.style.visibility = 'hidden'; rm.addEventListener('click', () => { src.layers.forEach(l => l.leaf && map.removeLayer(l.leaf)); sources.splice(sources.indexOf(src), 1); clearHL(); renderLayers(); updateEmpty(); refreshLabels(); dirty(); });
+      const rm = el('button', 'icon-btn small', '✕'); rm.title = 'إزالة'; if (src.id === 'field') rm.style.visibility = 'hidden'; rm.addEventListener('click', () => { const keep = src.layers.filter(inGroup); if (keep.length) { removeLayers(src.layers.filter(l => !inGroup(l)), 'اتشال الملف «' + src.name + '» — وفضلت ' + keep.length + ' طبقة جوه الجروبات زي ما هي', true); return; } removeLayers(src.layers.slice(), 'اتشال الملف «' + src.name + '»'); if (sources.indexOf(src) >= 0 && !src.layers.length) { sources.splice(sources.indexOf(src), 1); renderLayers(); updateEmpty(); } });
       const si = sources.indexOf(src); const up = el('button', 'icon-btn small', '▲'); up.title = 'الملف ده يترسم فوق'; up.disabled = si === sources.length - 1; up.onclick = () => { sources.splice(si, 1); sources.splice(si + 1, 0, src); applyOrder(); renderLayers(); dirty(); };
       const dn = el('button', 'icon-btn small', '▼'); dn.title = 'الملف ده يترسم تحت'; dn.disabled = si === 0; dn.onclick = () => { sources.splice(si, 1); sources.splice(si - 1, 0, src); applyOrder(); renderLayers(); dirty(); };
       h.append(up, dn, rm); sec.appendChild(h);
@@ -3474,14 +3476,14 @@ return ret;
   }
   // ---- removing layers from the work (never touches the original files) with undo ----
   let undoRm = null;
-  function removeLayers(ls, label) {
-    ls = ls.filter(l => l && srcOf(l) && !(srcOf(l).id === 'field')); if (!ls.length) return;
+  function removeLayers(ls, label, protect) {
+    ls = ls.filter(l => l && srcOf(l) && !(srcOf(l).id === 'field')); if (protect) ls = ls.filter(l => !inGroup(l)); if (!ls.length) { if (label) toast(label); renderLayers(); return; }
     const rec = { srcs: sources.slice(), lists: new Map(sources.map(x => [x, x.layers.slice()])) };
     ls.forEach(l => { const src = srcOf(l); if (l.leaf) map.removeLayer(l.leaf); src.layers.splice(src.layers.indexOf(l), 1); if (!src.layers.length && !src.error) sources.splice(sources.indexOf(src), 1); });
     undoRm = rec; clearHL(); renderLayers(); updateEmpty(); refreshLabels(); dirty();
     undoBar((label || (ls.length === 1 ? 'طبقة «' + ls[0].name + '»' : ls.length + ' طبقة')) + ' اتمسحت من الشغل — الملف الأصلي زي ما هو');
   }
-  function keepOnly(keep, label) { const ks = new Set(keep); const rm = sources.filter(x => x.id !== 'field' && x.id !== 'qc').flatMap(x => x.layers).filter(l => !ks.has(l)); if (!rm.length) return toast('مفيش طبقات تانية'); removeLayers(rm, 'سيبنا ' + label + ' بس — اتمسحت ' + rm.length + ' طبقة'); }
+  function keepOnly(keep, label) { const ks = new Set(keep); const rm = sources.filter(x => x.id !== 'field' && x.id !== 'qc').flatMap(x => x.layers).filter(l => !ks.has(l)); const rm2 = rm.filter(l => !inGroup(l)); const kept = rm.length - rm2.length; if (!rm2.length) return toast(kept ? 'كل الطبقات التانية جوه جروبات — مامسحتش حاجة' : 'مفيش طبقات تانية'); removeLayers(rm2, 'سيبنا ' + label + ' بس — اتمسحت ' + rm2.length + ' طبقة' + (kept ? ' (وفضلت ' + kept + ' طبقة جوه جروبات تانية)' : '')); }
   function undoBar(msg) {
     let b = document.getElementById('undoBar'); if (b) b.remove(); b = el('div', 'base-help'); b.id = 'undoBar';
     const u = el('button', 'btn', '↶ تراجع'); u.style.cssText = 'background:var(--accent);color:#fff;border:0;border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer';
