@@ -973,6 +973,7 @@ body.show-home .empty{display:flex!important;background:rgba(16,41,46,.25);point
 body.show-home .home-x{display:inline-block}
 .brand{cursor:pointer}
 
+.lg-bar{flex-wrap:wrap;align-items:center;gap:6px}.lg-bar input,.lg-bar select{flex:1 1 140px;max-width:none!important;min-width:0}.lg-bar>span,.lg-bar>b{white-space:nowrap}
 .ctx-menu{position:fixed;z-index:3500;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:6px;min-width:220px;display:flex;flex-direction:column}.ctx-menu button{background:none;border:0;color:inherit;font:inherit;text-align:start;padding:9px 12px;border-radius:8px;cursor:pointer}.ctx-menu button:hover{background:var(--bg)}.ctx-menu .danger{color:var(--warn)}.ctx-h{font-weight:700;padding:6px 12px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}.ctx-sep{height:1px;background:var(--line);margin:4px 6px}
 .base-help{position:fixed;left:50%;bottom:calc(96px + var(--sb));transform:translateX(-50%);z-index:1200;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;gap:10px;align-items:center;max-width:92vw;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px}.base-help .btn{white-space:nowrap}
 </style>
@@ -3349,7 +3350,7 @@ return ret;
     if (e.key === 'Escape') { closeSheets(); return; }
     if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '') || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (k === 'o') $('#fileInput').click(); else if (k === 'l') $('#btnLayers').click(); else if (k === 'm') $('#btnMeasure').click(); else if (k === 'e') $('#btnExport').click(); else if (k === 'q') $('#btnQC').click(); else if (k === 't') $('#btnTools').click(); else if (k === 'f') $('#btnZoomAll').click();
+    if (k === 'o') { input.value = ''; input.click(); } else if (k === 'l') $('#btnLayers').click(); else if (k === 'm') $('#btnMeasure').click(); else if (k === 'e') $('#btnExport').click(); else if (k === 'q') $('#btnQC').click(); else if (k === 't') $('#btnTools').click(); else if (k === 'f') $('#btnZoomAll').click();
   });
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { const sh = b.closest('.sheet'); if (sh && (sh.classList.contains('panel') || sh.classList.contains('dock'))) { sh.classList.remove('open'); if (!document.querySelector('.sheet.open:not(.panel):not(.dock)')) $('#scrim').classList.remove('show'); } else closeSheets(); }));
   function updateEmpty() { const any = sources.some(s => s.layers.length || s.error); document.body.classList.toggle('has-data', any); $('#layerCount').textContent = sources.reduce((a, s) => a + s.layers.length, 0) || ''; }
@@ -3359,6 +3360,17 @@ return ret;
   // ---- layer groups: your own named folders for CAD or database layers (remembered) ----
   let LG = []; try { LG = JSON.parse(store.get('gv_lgroups') || '[]'); } catch (e) { }
   const saveLG = () => store.set('gv_lgroups', JSON.stringify(LG));
+  let autoGrp = store.get('gv_autogrp') === '1';
+  function groupPerFile(srcs) {
+    let n = 0;
+    srcs.filter(x => x && x.id !== 'field' && x.id !== 'qc' && !x.error).forEach(src => {
+      const ls = src.layers.filter(l => !grpOf(l)); if (!ls.length) return;
+      let name = src.name.replace(/\.(gdb|zip|dwg|dxf|gpkg|kmz|kml|geojson|json|shp|csv)(\.zip)?$/i, '') || src.name; let base = name, k = 2; while (LG.some(g => g.name === name)) name = base + ' (' + k++ + ')';
+      const g = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, keys: [...new Set(ls.map(lkey))], open: false }; LG.push(g); ls.forEach(l => { l._grp = g.id; }); n++;
+    });
+    if (n) { saveLG(); renderLayers(); }
+    return n;
+  }
   const lkey = l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); return (sr ? sr.name : '') + '::' + l.name; };
   const keysOf = l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); const ks = [lkey(l)]; if (sr && sr.origName) ks.push(sr.origName + '::' + l.name); return ks; };
   // membership is held by the layer itself (l._grp); the saved name keys only re-attach layers after a reload, and a key
@@ -3397,7 +3409,10 @@ return ret;
   }
   function groupsUI(box) {
     const bar = el('div', 'src-tools lg-bar');
-    if (!lgSel) { const nb = el('button', 'chip', '☑ اختار طبقات (جروب / مسح / سيب بس)'); nb.title = 'اختار طبقات (كاد أو داتا بيز) واعملهم جروب باسمك'; nb.onclick = () => { lgSel = new Set(); renderLayers(); }; bar.appendChild(nb); }
+    if (!lgSel) { const nb = el('button', 'chip', '☑ اختار طبقات (جروب / مسح / سيب بس)'); nb.title = 'اختار طبقات (كاد أو داتا بيز) واعملهم جروب باسمك'; nb.onclick = () => { lgSel = new Set(); renderLayers(); }; bar.appendChild(nb);
+      const pf = el('button', 'chip', '📁 جروب لكل ملف'); pf.title = 'كل ملف مفتوح يبقى جروب باسمه (الطبقات اللي مش في جروب بس)'; pf.onclick = () => { const n = groupPerFile(sources.slice()); toast(n ? 'اتعمل ' + n + ' جروب' : 'كل الطبقات في جروبات بالفعل'); };
+      const au = el('button', 'chip' + (autoGrp ? ' on' : ''), (autoGrp ? '✓ ' : '') + 'جروب تلقائي لكل ملف أفتحه'); au.onclick = () => { autoGrp = !autoGrp; store.set('gv_autogrp', autoGrp ? '1' : '0'); renderLayers(); };
+      bar.append(pf, au); }
     else {
       bar.appendChild(el('span', 'small', 'علّم على الطبقات (')); const nn = el('b', null, String(lgSel.size)); nn.id = 'lgN'; bar.appendChild(nn); bar.appendChild(el('span', 'small', ')'));
       const nm = el('input'); nm.placeholder = 'اسم الجروب الجديد'; nm.style.cssText = 'max-width:170px';
@@ -3406,7 +3421,8 @@ return ret;
       const cn = el('button', 'chip', 'إلغاء'); cn.onclick = () => { lgSel = null; renderLayers(); };
       const del = el('button', 'chip', '🗑 امسح المحدد'); del.title = 'امسح الطبقات المعلّم عليها من الشغل (الملفات الأصلية مبتتلمسش)'; del.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; removeLayers(ls); };
       const keep = el('button', 'chip', '★ سيب المحدد بس'); keep.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; keepOnly(ls, ls.length + ' طبقة'); };
-      bar.append(nm, sel, ok, del, keep, cn);
+      const okc = el('button', 'chip ok', 'تمام وكمّل جروب تاني'); okc.onclick = () => { const save = lgSel; ok.onclick(); if (lgSel === null && save.size) { lgSel = new Set(); renderLayers(); const i2 = document.querySelector('.lg-bar input'); if (i2) i2.focus(); } };
+      bar.append(nm, sel, ok, okc, del, keep, cn);
     }
     box.appendChild(bar);
     const all = sources.flatMap(sr => sr.layers);
@@ -3634,7 +3650,21 @@ return ret;
 
   // file opening
   const input = $('#fileInput');
-  function pickFiles() { input.value = ''; input.click(); }
+  const dirInput = document.createElement('input'); dirInput.type = 'file'; dirInput.multiple = true; dirInput.hidden = true; dirInput.setAttribute('webkitdirectory', ''); document.body.appendChild(dirInput);
+  dirInput.addEventListener('change', () => handleFiles(Array.from(dirInput.files)));
+  const canDir = 'webkitdirectory' in dirInput && !/Android|iPhone|iPad/i.test(navigator.userAgent);
+  function pickFiles(ev) {
+    if (!canDir) { input.value = ''; input.click(); return; }
+    let m = document.getElementById('openMenu'); if (m) { m.remove(); return; } m = el('div', 'ctx-menu'); m.id = 'openMenu';
+    const it = (t, sub, fn) => { const b = el('button'); b.appendChild(el('div', null, t)); b.appendChild(el('div', 'muted small', sub)); b.onclick = () => { m.remove(); fn(); }; m.appendChild(b); };
+    it('📄 ملفات', 'zip · DWG/DXF · SHP · KML · GPKG · Excel/CSV…', () => { input.value = ''; input.click(); });
+    it('📁 فولدر كامل', 'فولدر الـ GDB نفسه (من غير ضغط) أو فولدر فيه شيب فايلات وداتا', () => { dirInput.value = ''; dirInput.click(); });
+    m.appendChild(el('div', 'ctx-h', 'أو اسحب الملفات أو الفولدر على الخريطة'));
+    document.body.appendChild(m);
+    const r = (ev && ev.currentTarget ? ev.currentTarget : document.body).getBoundingClientRect(); const mr = m.getBoundingClientRect();
+    if (!r.width) { m.style.left = ((window.innerWidth - mr.width) / 2) + 'px'; m.style.top = ((window.innerHeight - mr.height) / 2) + 'px'; } else { m.style.left = Math.max(6, Math.min(window.innerWidth - mr.width - 6, r.left)) + 'px'; m.style.top = (r.top - mr.height - 8 > 6 ? r.top - mr.height - 8 : Math.min(window.innerHeight - mr.height - 6, r.bottom + 8)) + 'px'; }
+    setTimeout(() => { const off = e => { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('pointerdown', off, true); } }; document.addEventListener('pointerdown', off, true); }, 0);
+  }
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', pickFiles));
   input.addEventListener('change', () => handleFiles(Array.from(input.files)));
   async function handleFiles(files) {
@@ -3648,6 +3678,7 @@ return ret;
       if (!groups.length) { showMsg('الصيغة دي مش مدعومة.\n\nالصيغ المدعومة: File Geodatabase (.gdb مضغوط zip) · GeoPackage · Shapefile · KML/KMZ · GeoJSON · DXF · GPX · CSV'); return; }
       $('#busy').classList.remove('show');
       const added = await addGroups(groups);
+      if (autoGrp && added && added.length) groupPerFile(added);
       if (GV.afterOpen) setTimeout(() => GV.afterOpen(added || []), 700);
     } catch (e) { showMsg('حصلت مشكلة أثناء الفتح:\n' + (e.message || e)); }
     finally { $('#busy').classList.remove('show'); }
@@ -3655,7 +3686,22 @@ return ret;
   // drag & drop (desktop)
   document.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag'); });
   document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('drag'); });
-  document.addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('drag'); handleFiles(Array.from(e.dataTransfer.files || [])); });
+  // dropped folders (a .gdb folder, a folder of shapefiles…) are read with their inner paths
+  async function dropEntries(items) {
+    const out = [];
+    const walk = async (en, path) => {
+      if (en.isFile) { const f = await new Promise((res, rej) => en.file(res, rej)); out.push({ name: f.name, webkitRelativePath: path + f.name, size: f.size, arrayBuffer: () => f.arrayBuffer(), text: () => f.text() }); }
+      else if (en.isDirectory) { const rd = en.createReader(); let batch; do { batch = await new Promise((res, rej) => rd.readEntries(res, rej)); for (const c of batch) await walk(c, path + en.name + '/'); } while (batch.length); }
+    };
+    for (const en of items) if (en) await walk(en, '');
+    return out;
+  }
+  document.addEventListener('drop', async e => {
+    e.preventDefault(); document.body.classList.remove('drag');
+    const items = Array.from(e.dataTransfer.items || []).map(i => i.webkitGetAsEntry ? i.webkitGetAsEntry() : null);
+    if (items.some(x => x && x.isDirectory)) { try { handleFiles(await dropEntries(items)); return; } catch (er) { } }
+    handleFiles(Array.from(e.dataTransfer.files || []));
+  });
 
   $('#btnLayers').addEventListener('click', () => { renderLayers(); openSheet('#layerSheet'); });
   $('#btnBase').addEventListener('click', () => openSheet('#baseSheet'));
