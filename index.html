@@ -3361,7 +3361,17 @@ return ret;
   const saveLG = () => store.set('gv_lgroups', JSON.stringify(LG));
   const lkey = l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); return (sr ? sr.name : '') + '::' + l.name; };
   const keysOf = l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); const ks = [lkey(l)]; if (sr && sr.origName) ks.push(sr.origName + '::' + l.name); return ks; };
-  const grpOf = l => { const ks = keysOf(l); return LG.find(g => ks.some(k => g.keys.indexOf(k) >= 0)); };
+  // membership is held by the layer itself (l._grp); the saved name keys only re-attach layers after a reload, and a key
+  // already held by another layer is never taken by a newly added file that happens to have the same names
+  const allLayers = () => sources.flatMap(x => x.layers);
+  const grpOf = l => {
+    if (l._grp !== undefined) return l._grp ? LG.find(g => g.id === l._grp) || null : null;
+    const ks = keysOf(l); const g = LG.find(g2 => ks.some(k => g2.keys.indexOf(k) >= 0)); if (!g) return null; // undecided: no group yet
+    const k = ks.find(k2 => g.keys.indexOf(k2) >= 0);
+    const holder = allLayers().find(o => o !== l && o._grp === g.id && keysOf(o).indexOf(k) >= 0);
+    if (holder) { const so = x => sources.find(y => y.layers.indexOf(x) >= 0); const hs = so(holder), ms = so(l); if (hs && ms && superseded(hs) && ms.origName === hs.name) { holder._grp = ''; l._grp = g.id; return g; } l._grp = ''; return null; }
+    l._grp = g.id; return g;
+  };
   const inGroup = l => !!grpOf(l);
   let lgSel = null; // Set of layers while picking
   function mkRow(l) {
@@ -3392,7 +3402,7 @@ return ret;
       bar.appendChild(el('span', 'small', 'علّم على الطبقات (')); const nn = el('b', null, String(lgSel.size)); nn.id = 'lgN'; bar.appendChild(nn); bar.appendChild(el('span', 'small', ')'));
       const nm = el('input'); nm.placeholder = 'اسم الجروب الجديد'; nm.style.cssText = 'max-width:170px';
       const sel = el('select'); const o0 = el('option', null, '— أو ضيفهم لجروب موجود —'); o0.value = ''; sel.appendChild(o0); LG.forEach(g => { const o = el('option', null, g.name); o.value = g.id; sel.appendChild(o); });
-      const ok = el('button', 'chip ok', 'تمام'); ok.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const keys = [...lgSel].map(lkey); LG.forEach(g => { g.keys = g.keys.filter(k => keys.indexOf(k) < 0); }); let g = sel.value && LG.find(x => x.id === sel.value); if (!g) { const name = nm.value.trim() || ('جروب ' + (LG.length + 1)); g = { id: Date.now().toString(36), name, keys: [], open: true }; LG.push(g); } g.keys.push(...keys); LG = LG.filter(x => x.keys.length); saveLG(); lgSel = null; renderLayers(); toast('اتحطوا في جروب «' + g.name + '»'); };
+      const ok = el('button', 'chip ok', 'تمام'); ok.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const keys = [...lgSel].map(lkey); LG.forEach(g => { g.keys = g.keys.filter(k => keys.indexOf(k) < 0); }); let g = sel.value && LG.find(x => x.id === sel.value); if (!g) { const name = nm.value.trim() || ('جروب ' + (LG.length + 1)); g = { id: Date.now().toString(36), name, keys: [], open: true }; LG.push(g); } g.keys.push(...keys); [...lgSel].forEach(l => { l._grp = g.id; }); LG = LG.filter(x => x.keys.length); saveLG(); lgSel = null; renderLayers(); toast('اتحطوا في جروب «' + g.name + '»'); };
       const cn = el('button', 'chip', 'إلغاء'); cn.onclick = () => { lgSel = null; renderLayers(); };
       const del = el('button', 'chip', '🗑 امسح المحدد'); del.title = 'امسح الطبقات المعلّم عليها من الشغل (الملفات الأصلية مبتتلمسش)'; del.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; removeLayers(ls); };
       const keep = el('button', 'chip', '★ سيب المحدد بس'); keep.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; keepOnly(ls, ls.length + ' طبقة'); };
@@ -3401,17 +3411,17 @@ return ret;
     box.appendChild(bar);
     const all = sources.flatMap(sr => sr.layers);
     LG.forEach(g => {
-      const ls = [...new Set(g.keys.map(k => { const c = all.filter(l => keysOf(l).indexOf(k) >= 0); return c.find(l => { const sr = sources.find(x => x.layers.indexOf(l) >= 0); return sr && !superseded(sr); }) || c[0]; }).filter(Boolean))]; if (!ls.length && !lgSel) return;
+      const ls = all.filter(l => grpOf(l) === g); if (!ls.length && !lgSel) return;
       const sec = el('section', 'src lgrp'); const h = el('div', 'src-head'); const t = el('div', 'src-title');
       const fold = el('button', 'icon-btn small', g.open === false ? '▸' : '▾'); fold.onclick = () => { g.open = g.open === false; saveLG(); renderLayers(); };
       t.append(fold, el('b', null, '📁 ' + g.name), el('span', 'tag', ls.length + ' طبقة')); h.appendChild(t);
       const vis = el('button', 'icon-btn small', ls.some(l => l.visible) ? '👁' : '◌'); vis.title = 'إظهار/إخفاء الجروب كله'; vis.onclick = () => { const v = !ls.some(l => l.visible); ls.forEach(l => setVis(l, v)); renderLayers(); };
       const zm = el('button', 'icon-btn small', '⤢'); zm.title = 'زوم على الجروب'; zm.onclick = () => { let bb = null; ls.forEach(l => { if (l.leaf && l.visible) { const b2 = l.leaf.getBounds(); if (b2.isValid()) bb = bb ? bb.extend(b2) : L.latLngBounds(b2.getSouthWest(), b2.getNorthEast()); } }); if (bb) map.fitBounds(bb, { padding: [30, 30], maxZoom: 18 }); };
       const rn = el('button', 'icon-btn small', '✎'); rn.title = 'غيّر الاسم'; rn.onclick = () => { const v = prompt('اسم الجروب', g.name); if (v && v.trim()) { g.name = v.trim(); saveLG(); renderLayers(); } };
-      const dl = el('button', 'icon-btn small', '✕'); dl.title = 'فك الجروب (الطبقات بترجع مكانها)'; dl.onclick = () => { LG = LG.filter(x => x !== g); saveLG(); renderLayers(); };
+      const dl = el('button', 'icon-btn small', '✕'); dl.title = 'فك الجروب (الطبقات بترجع مكانها)'; dl.onclick = () => { all.forEach(o => { if (o._grp === g.id) o._grp = ''; }); LG = LG.filter(x => x !== g); saveLG(); renderLayers(); };
       const only = el('button', 'icon-btn small', '★'); only.title = 'سيب الجروب ده بس وامسح باقي الطبقات من الشغل'; only.onclick = () => keepOnly(ls, 'الجروب «' + g.name + '»');
       h.append(vis, zm, only, rn, dl); sec.appendChild(h);
-      if (g.open !== false) ls.forEach(l => { const r = mkRow(l); const out = el('button', 'icon-btn small', '⇱'); out.title = 'طلّعها من الجروب'; out.onclick = () => { g.keys = g.keys.filter(k => k !== lkey(l)); LG = LG.filter(x => x.keys.length); saveLG(); renderLayers(); }; r.querySelector('.lyr-acts').appendChild(out); sec.appendChild(r); });
+      if (g.open !== false) ls.forEach(l => { const r = mkRow(l); const out = el('button', 'icon-btn small', '⇱'); out.title = 'طلّعها من الجروب'; out.onclick = () => { l._grp = ''; g.keys = g.keys.filter(k => keysOf(l).indexOf(k) < 0 || all.some(o => o !== l && o._grp === g.id && keysOf(o).indexOf(k) >= 0)); LG = LG.filter(x => x.keys.length); saveLG(); renderLayers(); }; r.querySelector('.lyr-acts').appendChild(out); sec.appendChild(r); });
       box.appendChild(sec);
     });
   }
@@ -3420,6 +3430,7 @@ return ret;
     if (!sources.length) { box.appendChild(el('p', 'muted pad', 'لسه مفيش ملفات مفتوحة.')); return; }
     groupsUI(box);
     sources.slice().reverse().forEach(src => {
+      if (!src.error && src.layers.length && src.layers.every(l => grpOf(l))) return; // everything of this file lives in groups: no empty header
       const sec = el('section', 'src');
       const h = el('div', 'src-head');
       const t = el('div', 'src-title'); t.appendChild(el('b', null, src.name)); t.appendChild(el('span', 'tag', src.type || '')); if (superseded(src)) t.appendChild(el('span', 'tag lock', '🔒 الأصل — مبيتعدلش')); else if (src.isCopy) t.appendChild(el('span', 'tag copy', '✎ نسخة شغل'));
