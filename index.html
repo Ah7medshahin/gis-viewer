@@ -3350,7 +3350,7 @@ return ret;
     if (e.key === 'Escape') { closeSheets(); return; }
     if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '') || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (k === 'o') { input.value = ''; input.click(); } else if (k === 'l') $('#btnLayers').click(); else if (k === 'm') $('#btnMeasure').click(); else if (k === 'e') $('#btnExport').click(); else if (k === 'q') $('#btnQC').click(); else if (k === 't') $('#btnTools').click(); else if (k === 'f') $('#btnZoomAll').click();
+    if (k === 'o') pickFiles(); else if (k === 'l') $('#btnLayers').click(); else if (k === 'm') $('#btnMeasure').click(); else if (k === 'e') $('#btnExport').click(); else if (k === 'q') $('#btnQC').click(); else if (k === 't') $('#btnTools').click(); else if (k === 'f') $('#btnZoomAll').click();
   });
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { const sh = b.closest('.sheet'); if (sh && (sh.classList.contains('panel') || sh.classList.contains('dock'))) { sh.classList.remove('open'); if (!document.querySelector('.sheet.open:not(.panel):not(.dock)')) $('#scrim').classList.remove('show'); } else closeSheets(); }));
   function updateEmpty() { const any = sources.some(s => s.layers.length || s.error); document.body.classList.toggle('has-data', any); $('#layerCount').textContent = sources.reduce((a, s) => a + s.layers.length, 0) || ''; }
@@ -3661,11 +3661,12 @@ return ret;
     it('📁 فولدر كامل', 'فولدر الـ GDB نفسه (من غير ضغط) أو فولدر فيه شيب فايلات وداتا', () => { dirInput.value = ''; dirInput.click(); });
     m.appendChild(el('div', 'ctx-h', 'أو اسحب الملفات أو الفولدر على الخريطة'));
     document.body.appendChild(m);
-    const r = (ev && ev.currentTarget ? ev.currentTarget : document.body).getBoundingClientRect(); const mr = m.getBoundingClientRect();
+    const r = ev && ev.currentTarget && ev.currentTarget.getBoundingClientRect ? ev.currentTarget.getBoundingClientRect() : { width: 0 }; const mr = m.getBoundingClientRect();
     if (!r.width) { m.style.left = ((window.innerWidth - mr.width) / 2) + 'px'; m.style.top = ((window.innerHeight - mr.height) / 2) + 'px'; } else { m.style.left = Math.max(6, Math.min(window.innerWidth - mr.width - 6, r.left)) + 'px'; m.style.top = (r.top - mr.height - 8 > 6 ? r.top - mr.height - 8 : Math.min(window.innerHeight - mr.height - 6, r.bottom + 8)) + 'px'; }
     setTimeout(() => { const off = e => { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('pointerdown', off, true); } }; document.addEventListener('pointerdown', off, true); }, 0);
   }
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', pickFiles));
+  GV.pickData = ev => pickFiles(ev);
   input.addEventListener('change', () => handleFiles(Array.from(input.files)));
   async function handleFiles(files) {
     if (!files.length) return;
@@ -7995,7 +7996,7 @@ return ret;
     if (F.schema && GV.sources.indexOf(F.schema) < 0) F.schema = null;
     const bs = el('div');
     if (F.schema) bs.appendChild(el('p', 'small', '✓ هتتحول على السكيما بتاعتك: ' + F.schema.name + ' (' + F.schema.layers.length + ' فيتشر كلاس)'));
-    bs.appendChild(acts(btn(F.schema ? 'غيّرها' : '📂 افتح الـ GDB/GPKG الفاضية بتاعتك', () => { GV.pendingMode = 'schema'; $('#fileInput').value = ''; $('#fileInput').click(); }, !F.schema), F.schema ? btn('استخدم سكيما شركة المياه الجاهزة بدلها', () => { F.schema = null; render(); }) : btn('مش معايا — استخدم الجاهزة (' + ((GV.NETS.find(n => n.id === F.net) || {}).name || '') + ')', () => { F.schemaChosen = true; F.focus = null; render(); })));
+    bs.appendChild(acts(btn(F.schema ? 'غيّرها' : '📂 افتح الـ GDB/GPKG الفاضية بتاعتك', () => { GV.pendingMode = 'schema'; GV.pickData(); }, !F.schema), F.schema ? btn('استخدم سكيما شركة المياه الجاهزة بدلها', () => { F.schema = null; render(); }) : btn('مش معايا — استخدم الجاهزة (' + ((GV.NETS.find(n => n.id === F.net) || {}).name || '') + ')', () => { F.schemaChosen = true; F.focus = null; render(); })));
     box.appendChild(step('S', 'السكيما اللي هنحوّل عليها', F.schema || F.schemaChosen ? 'done' : 'todo', F.schema ? 'السكيما بتاعتك: ' + F.schema.name : (F.schemaChosen ? 'السكيما الجاهزة لـ ' + ((GV.NETS.find(n => n.id === F.net) || {}).name || '') : 'لو عندك GDB فاضية بالسكيما المطلوبة (الفيتشر كلاسز والحقول والدومينز) افتحها هنا، والتحويل هيمشي عليها بالظبط.'), bs));
     const hasCRS = src.layers.some(l => l.leaf);
     // 1. check
@@ -8209,7 +8210,7 @@ return ret;
     const box = $('#gflowBody'); box.textContent = '';
     const ss = gisSources();
     const b1 = el('div');
-    if (!ss.length) b1.appendChild(acts(btn('📂 افتح GDB / SHP / GPKG', () => { GV.pendingMode = 'gis'; $('#fileInput').value = ''; $('#fileInput').click(); }, true)));
+    if (!ss.length) b1.appendChild(acts(btn('📂 افتح GDB / SHP / GPKG', () => { GV.pendingMode = 'gis'; GV.pickData(); }, true)));
     else ss.forEach(s => b1.appendChild(el('div', 'small', '• ' + s.name + ' — ' + s.layers.filter(l => l.features.length).length + ' طبقة · ' + s.layers.reduce((a, l) => a + l.features.length, 0).toLocaleString('en') + ' عنصر' + (s.isCopy ? ' (نسخة شغل)' : ''))));
     box.appendChild(el('p', 'small', '🔒 الأصل مش بيتعدّل — أي حل بيتعمل على "نسخة شغل".'));
     box.appendChild(step(1, 'الداتا', ss.length ? 'done' : 'cur', null, b1));
@@ -8239,7 +8240,7 @@ return ret;
   document.querySelectorAll('.mode').forEach(b => b.addEventListener('click', () => {
     const m = b.dataset.mode;
     if (m === 'field') return $('#btnTeam').click();
-    GV.pendingMode = m === 'view' ? null : m; $('#fileInput').value = ''; $('#fileInput').click();
+    GV.pendingMode = m === 'view' ? null : m; GV.pickData();
   }));
   const markSchema = s => { s.isSchema = true; s._fold = true; s.layers.forEach(l => GV.setVis(l, false)); GV.renderLayers(); };
   GV.afterOpen = added => {
