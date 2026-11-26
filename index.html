@@ -3514,6 +3514,7 @@ return ret;
     const ok = el('button', 'chip ok', 'تمام'); const done = v => { w.remove(); res(v); }; ok.onclick = () => done(inp.value); x.onclick = () => done(null); inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value); else if (e.key === 'Escape') done(null); };
     w.append(h, inp, ok); document.body.appendChild(w); inp.focus(); inp.select(); }); }
   GV.askText = askText;
+  GV.groupsList = () => { const all = sources.flatMap(x => x.layers); return LG.map(g => ({ name: g.name, id: g.id, layers: all.filter(l => grpOf(l) === g) })).filter(x => x.layers.length); };
   function applySel(l) { if (!l.leaf || !l.leaf.eachLayer) return; const v = l.noSelect ? 'none' : ''; l.leaf.eachLayer(x => { const go = y => { if (y._path) y._path.style.pointerEvents = v; if (y._icon) y._icon.style.pointerEvents = v; if (y.eachLayer) y.eachLayer(go); }; go(x); }); }
   function setSelectable(l, on) { l.noSelect = !on; applySel(l); renderLayers(); dirty(); toast(on ? 'السيليكت اتفتح على «' + l.name + '»' : 'السيليكت اتقفل على «' + l.name + '» — الكليك بيعدّي للي تحتها'); }
   function applyOrder() { sources.forEach(src => src.layers.slice().reverse().forEach(l => { if (l.leaf && l.visible && map.hasLayer(l.leaf) && l.leaf.bringToFront) { try { l.leaf.bringToFront(); } catch (e) { } } if (l.noSelect) applySel(l); })); }
@@ -9256,6 +9257,102 @@ return ret;
   const st = document.createElement('style'); st.textContent = '.std-rule{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}.std-rule input{margin-top:4px}#stdBody h3{margin:14px 0 6px;font-size:15px}#stdBody ul{padding-inline-start:18px;margin:0}#stdBody select{width:100%;margin-bottom:6px}';
   document.head.appendChild(st);
   GV.netStd = { run, open, LIB, RULES, SRC };
+})();
+
+</script>
+<script>
+/* 📊 Bill of quantities: pick the data (a file from outside, a layer group, or layers), and get quantities per layer —
+   pipes by diameter (length + count), valves / fittings / structures by their internal classification (count).
+   For every layer you can choose what to group by (and an optional second field); the choice is remembered (gv_boq). */
+(function () {
+  'use strict';
+  const GV = window.GV; const { $, el } = GV;
+  const KEY = 'gv_boq'; let CFG = {}; try { CFG = JSON.parse(GV.store.get(KEY) || '{}'); } catch (e) { }
+  const save = () => GV.store.set(KEY, JSON.stringify(CFG));
+  const SYS = /^(objectid|fid|oid|globalid|shape|shape_length|shape_area|shape_leng|created_|last_edited|xcoord|ycoord|x$|y$|start.*coord|end.*coord|elevation|groundelevation|.*elevation$|comments?|remarks?|notes?)/i;
+  const fields = l => GV.fieldsOf(l).filter(k => !SYS.test(k));
+  const isLine = l => l.kind === 'line' || l.features.some(f => f.wgs && /LineString/.test(f.wgs.geometry.type));
+  function autoField(l) {
+    const fs = GV.fieldsOf(l); const has = k => fs.find(x => x.toLowerCase() === k.toLowerCase());
+    if (isLine(l)) return fs.find(k => /^(diameter|dia|nominal_?dia(meter)?|size|pipe_?size|قطر)$/i.test(k)) || fs.find(k => /(diam|قطر)/i.test(k)) || (l.subtypes && has(l.subtypes.field)) || '';
+    const D = GV.domInfoOf ? GV.domInfoOf(l) : null; if (D && D.subtypes && has(D.subtypes.field)) return has(D.subtypes.field);
+    return ['FEATURETYPE', 'VALVETYPE', 'FITTINGTYPE', 'JUNCTIONTYPE', 'DEVICETYPE', 'ASSETTYPE', 'SUBTYPE', 'TYPE', 'Block'].map(has).find(Boolean) || fs.find(k => /(type|نوع|class|تصنيف)/i.test(k)) || '';
+  }
+  const autoSecond = l => isLine(l) ? (GV.fieldsOf(l).find(k => /^(material|mat|pipe_?material|مادة)$/i.test(k)) || '') : (GV.fieldsOf(l).find(k => /^(diameter|dia|size|قطر)$/i.test(k)) || '');
+  const cfgOf = l => { const c = CFG[l.name] || {}; return { by: c.by != null ? c.by : autoField(l), by2: c.by2 != null ? c.by2 : autoSecond(l), on: c.on !== false }; };
+  // domain / subtype code → its description
+  function labeler(l, field) {
+    const D = GV.domInfoOf ? GV.domInfoOf(l) : null; if (!D || !field) return v => v;
+    if (D.subtypes && D.subtypes.field.toLowerCase() === field.toLowerCase()) { const m = new Map(D.subtypes.list.map(x => [String(x.code), x.name])); return v => m.has(String(v)) ? m.get(String(v)) : v; }
+    const dn = D.domains && Object.keys(D.domains).find(k => k.toLowerCase() === field.toLowerCase()); const dd = dn && D.domainDefs ? D.domainDefs[D.domains[dn]] : null;
+    if (dd && dd.codes) { const m = new Map(dd.codes.map(x => [String(x.code), x.name])); return v => m.has(String(v)) ? m.get(String(v)) : v; }
+    return v => v;
+  }
+  function compute(ls) {
+    const rows = [];
+    ls.forEach(l => { const c = cfgOf(l); if (!c.on || !l.features.length) return; const line = isLine(l); const lab = labeler(l, c.by), lab2 = labeler(l, c.by2); const m = new Map();
+      l.features.forEach(f => { if (f._sym) return; const p = f.properties || {}; const v1 = c.by ? p[c.by] : '', v2 = c.by2 ? p[c.by2] : '';
+        const k = (v1 == null || v1 === '' ? '—' : lab(v1)) + '\u0001' + (v2 == null || v2 === '' ? (c.by2 ? '—' : '') : lab2(v2)); const o = m.get(k) || { n: 0, len: 0 }; o.n++;
+        if (line && f.wgs) o.len += GV.lineLen(f.wgs.geometry) || 0; m.set(k, o); });
+      const arr = [...m.entries()].map(([k, o]) => { const [a, b] = k.split('\u0001'); return { l, a, b, n: o.n, len: o.len, line }; });
+      arr.sort((x, y) => (parseFloat(x.a) || 0) - (parseFloat(y.a) || 0) || String(x.a).localeCompare(String(y.a)) || String(x.b).localeCompare(String(y.b)));
+      rows.push(...arr);
+      if (arr.length > 1) rows.push({ l, a: 'الإجمالي', b: '', n: arr.reduce((s, r) => s + r.n, 0), len: arr.reduce((s, r) => s + r.len, 0), line, total: true });
+    });
+    return rows;
+  }
+  // ---------- sheet ----------
+  const sh = el('div', 'sheet panel right'); sh.id = 'boqSheet';
+  sh.innerHTML = '<div class="grab"></div><div class="sh-head"><h2>📊 جدول الكميات</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="boqBody"></div>';
+  document.body.appendChild(sh); sh.querySelector('[data-close]').onclick = () => sh.classList.remove('open');
+  let pick = { mode: 'all', group: null, layers: null };
+  const allL = () => GV.sources.filter(s => s.id !== 'qc' && s.id !== 'field').flatMap(s => s.layers).filter(l => l.features && l.features.length && !(GV.superseded && GV.superseded(GV.sources.find(s => s.layers.indexOf(l) >= 0))));
+  const chosen = () => pick.mode === 'group' ? ((GV.groupsList().find(g => g.id === pick.group) || {}).layers || []).filter(l => l.features.length) : pick.mode === 'layers' ? (pick.layers || []).filter(l => allL().indexOf(l) >= 0) : allL();
+  function render() {
+    const box = $('#boqBody'); box.textContent = '';
+    // 1) which data
+    const s1 = el('div', 'step'); s1.appendChild(el('b', null, '1. الداتا'));
+    const bar = el('div', 'qc-filt');
+    const ch = (t, on, fn) => { const b = el('button', 'chip' + (on ? ' on' : ''), t); b.onclick = fn; bar.appendChild(b); };
+    ch('📂 ملف من برا', false, () => { GV._boqPending = true; GV.pickData(); });
+    ch('كل الطبقات المفتوحة', pick.mode === 'all', () => { pick = { mode: 'all' }; render(); });
+    GV.groupsList().forEach(g => ch('📁 ' + g.name + ' (' + g.layers.length + ')', pick.mode === 'group' && pick.group === g.id, () => { pick = { mode: 'group', group: g.id }; render(); }));
+    ch('☑ أختار طبقات', pick.mode === 'layers', () => { pick = { mode: 'layers', layers: pick.layers || allL().slice() }; render(); });
+    s1.appendChild(bar);
+    if (pick.mode === 'layers') { const lst = el('div', 'boq-pick'); allL().forEach(l => { const lb = el('label'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = pick.layers.indexOf(l) >= 0; cb.onchange = () => { if (cb.checked) pick.layers.push(l); else pick.layers = pick.layers.filter(x => x !== l); render(); }; lb.append(cb, document.createTextNode(' ' + l.name)); lst.appendChild(lb); }); s1.appendChild(lst); }
+    box.appendChild(s1);
+    const ls = chosen();
+    if (!ls.length) { box.appendChild(el('p', 'muted', 'مفيش طبقات — افتح ملف أو اختار جروب.')); GV.openSheet('#boqSheet'); return; }
+    // 2) per-layer: count by what
+    const s2 = el('details', 'step'); s2.appendChild(el('summary', null, '2. الحصر لكل لير طبقًا لإيه (اضغط عشان تعدّل)'));
+    ls.forEach(l => { const c = cfgOf(l); const row = el('div', 'boq-cfg');
+      const on = el('input'); on.type = 'checkbox'; on.checked = c.on; on.title = 'تدخل في الحصر'; on.onchange = () => { CFG[l.name] = Object.assign({}, CFG[l.name], { on: on.checked }); save(); render(); };
+      const mk = (val, key, first) => { const se = el('select'); const o0 = el('option', null, first); o0.value = ''; se.appendChild(o0); fields(l).forEach(k => { const o = el('option', null, k); o.value = k; se.appendChild(o); }); se.value = val || ''; se.onchange = () => { CFG[l.name] = Object.assign({}, CFG[l.name], { [key]: se.value }); save(); render(); }; return se; };
+      row.append(on, el('b', null, l.name), el('span', 'muted small', isLine(l) ? 'خطوط · طول' : 'عدد'), mk(c.by, 'by', '— بدون تقسيم —'), mk(c.by2, 'by2', '— بدون تقسيم تاني —'));
+      s2.appendChild(row); });
+    const rs = el('button', 'chip', '↺ رجّع التقسيم التلقائي'); rs.onclick = () => { ls.forEach(l => { delete CFG[l.name]; }); save(); render(); }; s2.appendChild(rs);
+    box.appendChild(s2);
+    // 3) the table
+    const rows = compute(ls);
+    const s3 = el('div', 'step'); s3.appendChild(el('b', null, '3. الكميات'));
+    const t = el('table', 'smp-t boq-t'); const hr = el('tr'); ['الطبقة', 'التصنيف', 'تقسيم تاني', 'العدد', 'الطول (م)'].forEach(h => hr.appendChild(el('th', null, h))); t.appendChild(hr);
+    rows.forEach(r => { const tr = el('tr', r.total ? 'tot' : ''); tr.append(el('td', null, r.total ? '' : r.l.name), el('td', null, String(r.a)), el('td', null, String(r.b || '')), el('td', 'num', r.n.toLocaleString('en')), el('td', 'num', r.line ? r.len.toLocaleString('en', { maximumFractionDigits: 2 }) : '')); t.appendChild(tr); });
+    const wrap = el('div', 'scroll'); wrap.appendChild(t); s3.appendChild(wrap);
+    const acts = el('div', 'fc-acts');
+    const xl = el('button', 'chip ok', '⬇ Excel'); xl.onclick = async () => { const H = ['الطبقة', 'التصنيف', 'تقسيم تاني', 'العدد', 'الطول (م)']; const data = [H].concat(rows.map(r => [r.total ? r.l.name + ' — الإجمالي' : r.l.name, String(r.a), String(r.b || ''), r.n, r.line ? +r.len.toFixed(2) : '']));
+      const per = ls.filter(l => cfgOf(l).on).map(l => ({ name: ('كميات ' + l.name).slice(0, 31), rows: [H.slice(1)].concat(rows.filter(r => r.l === l).map(r => [String(r.a), String(r.b || ''), r.n, r.line ? +r.len.toFixed(2) : ''])) }));
+      const cf = [['الطبقة', 'التقسيم الأول', 'التقسيم التاني']].concat(ls.map(l => { const c = cfgOf(l); return [l.name, c.by || '—', c.by2 || '—']; }));
+      const bin = await GV.xlsx([{ name: 'جدول الكميات', rows: data }].concat(per).concat([{ name: 'طريقة الحصر', rows: cf }])); await GV.saveFile('BOQ_' + new Date().toISOString().slice(0, 10) + '.xlsx', bin); };
+    const cp = el('button', 'chip', 'نسخ'); cp.onclick = () => { const txt = rows.map(r => [r.total ? 'الإجمالي' : r.l.name, r.a, r.b || '', r.n, r.line ? r.len.toFixed(2) : ''].join('\t')).join('\n'); navigator.clipboard.writeText(txt).then(() => GV.toast('اتنسخ — الصقه في Excel')).catch(() => GV.toast('النسخ مش متاح هنا — نزّل Excel')); };
+    acts.append(xl, cp); s3.appendChild(acts); box.appendChild(s3);
+    GV.openSheet('#boqSheet');
+  }
+  GV.openBOQ = render;
+  // a file opened from the BOQ screen → its layers become the selection
+  const prevAfter = GV.afterOpen; GV.afterOpen = added => { if (GV._boqPending) { GV._boqPending = false; const ls = (added || []).flatMap(s => s.layers || []).filter(l => l.features && l.features.length); if (ls.length) { pick = { mode: 'layers', layers: ls }; setTimeout(render, 300); } return; } if (prevAfter) prevAfter(added); };
+  { const tools = document.querySelector('#toolsSheet .tools'); if (tools) { const b = el('button', 'tool'); b.innerHTML = '<span>📊</span><b>جدول الكميات</b><small>مواسير بالقطر، محابس وقطع بالتصنيف — من ملف أو جروب</small>'; b.onclick = () => render(); tools.insertBefore(b, tools.firstChild); } }
+  const st = document.createElement('style'); st.textContent = '.boq-cfg{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.boq-cfg select{grid-column:span 3;width:100%}.boq-pick{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;margin-top:6px}.boq-t td.num{text-align:end;font-variant-numeric:tabular-nums}.boq-t tr.tot td{font-weight:700;border-top:2px solid var(--line)}';
+  document.head.appendChild(st);
 })();
 
 </script>
