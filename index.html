@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <script type="application/json" id="claude-artifacts-manifest">{"permissions": ["full-access"]}</script>
-<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v24";
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v25";
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").then(r=>{window.GV_SWR=r}).catch(()=>{});
 const gvApply=v=>{const go=()=>location.replace(location.pathname+"?u="+v);Promise.all([window.caches?caches.keys().then(k=>Promise.all(k.map(x=>caches.delete(x)))):0,window.GV_SWR?GV_SWR.update().catch(()=>{}):0]).then(go,go)};
 const gvBar=v=>{if(document.getElementById("gvUpd")||!document.body)return;const b=document.createElement("div");b.id="gvUpd";b.textContent="🔄 فيه تحديث جديد للبرنامج — دوس هنا عشان يتحدّث";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#1565c0;color:#fff;padding:12px 18px;border-radius:24px;font:600 15px system-ui;box-shadow:0 4px 16px #0006;cursor:pointer;direction:rtl;max-width:92vw;text-align:center";b.onclick=()=>{b.textContent="⏳ بيتحدّث...";gvApply(v)};document.body.appendChild(b)};
@@ -1234,7 +1234,7 @@ body.show-home .home-x{display:inline-block}
       <button class="tool" id="btnDash"><span>📊</span><b>تقرير وداشبورد</b><small>كميات · المطلوب منك</small></button>
       <button class="tool ai" id="btnAI"><span>🧠</span><b>اسأل Claude</b><small>يبص على الداتا بنفسه</small></button>
       <button class="tool" id="btnAttrSrc"><span>📎</span><b>بيانات من ملفات</b><small>Excel · PDF · صور ← Attributes</small></button>
-      <button class="tool" id="btnSaveT"><span>💾</span><b>حفظ الشغل</b><small>يفضل محفوظ على الجهاز</small></button>
+      <button class="tool" id="btnSaveT"><span>💾</span><b>حفظ ومزامنة</b><small>شغلك يظهر على اللابتوب والموبايل</small></button>
       <button class="tool" id="btnTeam"><span>👷</span><b>الموقع والفريق</b><small>رفع ومقارنة</small></button>
     </div>
     <details class="adv"><summary>أدوات متقدمة (لو عايز تشغّل خطوة لوحدها)</summary>
@@ -8511,16 +8511,63 @@ return ret;
   async function idel(k) { const d = await idb(); if (!d) return; return new Promise(r => { try { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); t.oncomplete = () => r(); t.onerror = () => r(); } catch (e) { r(); } }); }
   async function ikeys() { const d = await idb(); if (!d) return []; return new Promise(r => { try { const q = d.transaction('kv').objectStore('kv').getAllKeys(); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); } catch (e) { r([]); } }); }
 
-  /* ---------- cloud (artifact) ---------- */
+  /* ---------- cloud: Claude account (artifact) or GitHub private repo ---------- */
   async function cap(n) { try { if (!window.claude || !window.claude.use) return null; return await window.claude.use(n); } catch (e) { return null; } }
   let cloud = null;
+  const ghCfg = () => { try { const c = JSON.parse(GV.store.get('gv_ghsync') || 'null'); return c && c.token && c.repo ? c : null; } catch (e) { return null; } };
+  function b64(str) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(new Blob([str])); }); }
+  function unb64(s) { const bin = atob(String(s).replace(/\s/g, '')); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new TextDecoder().decode(u); }
+  function ghCloud(cfg) {
+    const base = 'https://api.github.com/repos/' + cfg.repo + '/contents/';
+    const call = async (path, o = {}) => {
+      const h = { Authorization: 'Bearer ' + cfg.token, Accept: o.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+      if (o.body) h['Content-Type'] = 'application/json';
+      const r = await fetch(base + path + (o.method ? '' : (path.includes('?') ? '&' : '?') + 't=' + Date.now()), { method: o.method || 'GET', headers: h, body: o.body ? JSON.stringify(o.body) : undefined, cache: 'no-store' });
+      if (r.status === 404 && !o.method) return null;
+      if (!r.ok) { let m = ''; try { m = (await r.json()).message; } catch (e) { } const e = new Error(r.status === 401 ? 'الكود (التوكن) غلط أو انتهى' : r.status === 403 || r.status === 404 ? 'التوكن مالوش صلاحية على الريبو ' + cfg.repo + ' (' + (m || r.status) + ')' : (m || ('GitHub ' + r.status))); e.code = r.status; throw e; }
+      return o.raw ? r.text() : r.status === 204 ? {} : r.json();
+    };
+    const put = async (path, str, sha, msg) => { const body = { message: msg || 'sync', content: await b64(str) }; if (sha) body.sha = sha; return call(path, { method: 'PUT', body }); };
+    let metaSha = null;
+    return {
+      kind: 'gh', label: 'GitHub (' + cfg.repo + ')',
+      async getMeta() { const j = await call('ws.json'); if (!j) { metaSha = null; return null; } metaSha = j.sha; return JSON.parse(j.content ? unb64(j.content) : await call('ws.json', { raw: true })); },
+      async putMeta(o) {
+        const s = JSON.stringify(o);
+        try { const r = await put('ws.json', s, metaSha, 'workspace ' + o.savedAt); metaSha = r.content.sha; }
+        catch (e) { if (e.code !== 409 && e.code !== 422) throw e; const j = await call('ws.json'); metaSha = j ? j.sha : null; const r = await put('ws.json', s, metaSha, 'workspace ' + o.savedAt); metaSha = r.content.sha; }
+      },
+      async putLayer(key, str, prev) { const path = 'layers/' + key + '.json'; let sha = prev && prev.sha; let r; try { r = await put(path, str, sha, 'layer ' + key); } catch (e) { if (e.code !== 409 && e.code !== 422) throw e; const j = await call(path); r = await put(path, str, j && j.sha, 'layer ' + key); } return { cid: path, sha: r.content.sha }; },
+      async getLayer(m) { return m.cid ? call(m.cid, { raw: true }) : null; },
+      async delLayer(m) { if (m.cid && m.sha) await call(m.cid, { method: 'DELETE', body: { message: 'remove ' + m.key, sha: m.sha } }).catch(() => { }); },
+      async clear() { const j = await this.getMeta(); if (j) { for (const m of j.layers || []) await this.delLayer(m); await call('ws.json', { method: 'DELETE', body: { message: 'clear', sha: metaSha } }).catch(() => { }); metaSha = null; } }
+    };
+  }
+  function claudeCloud(db, assets, uid) {
+    const ref = db.doc('data/users/' + uid + '/workspace');
+    return {
+      kind: 'claude', label: 'حسابك على Claude',
+      async getMeta() { const d = await ref.get(); return d.exists ? d.data() : null; },
+      async putMeta(o) { await ref.set(o); },
+      async putLayer(key, str, prev) { if (str.length > 19.5 * 1048576) return { tooBig: true }; const a = await assets.upload(new Blob([str], { type: 'application/json' })); if (prev && prev.assetId) assets.delete(prev.assetId).catch(() => { }); return { assetId: a.id, url: a.url }; },
+      async getLayer(m) { if (!m.url && !m.assetId) return null; const r = await fetch(m.url || ('/_blob/' + m.assetId)); return r.ok ? r.text() : null; },
+      async delLayer(m) { if (m.assetId) assets.delete(m.assetId).catch(() => { }); },
+      async clear() { const d = await this.getMeta(); if (d) { (d.layers || []).forEach(m => this.delLayer(m)); await ref.delete(); } }
+    };
+  }
   async function getCloud() {
     if (cloud !== null) return cloud;
+    const g = ghCfg();
+    if (g) return (cloud = ghCloud(g));
     const db = await cap('db'), user = await cap('user'), assets = await cap('assets');
     let uid = null; try { uid = user ? await user.id() : null; } catch (e) { }
-    cloud = db && uid && assets ? { db, assets, uid, ref: db.doc('data/users/' + uid + '/workspace') } : false;
+    cloud = db && uid && assets ? claudeCloud(db, assets, uid) : false;
     return cloud;
   }
+  function hash(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36) + '.' + s.length.toString(36); }
+  const DEV = GV.store.get('gv_dev') || (() => { const d = Math.random().toString(36).slice(2, 8); GV.store.set('gv_dev', d); return d; })();
+  const seen = { get: () => GV.store.get('gv_cloudSeen') || '', set: v => GV.store.set('gv_cloudSeen', v || '') };
+  const unsynced = { get: () => GV.store.get('gv_unsynced') === '1', set: v => GV.store.set('gv_unsynced', v ? '1' : '0') };
 
   /* ---------- serialize ---------- */
   const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -8551,45 +8598,48 @@ return ret;
 
   async function saveNow(manual) {
     if (saving) { again = true; return; }
-    saving = true; clearTimeout(timer); setState('saving');
-    let ok = true, cloudErr = null;
+    saving = true; clearTimeout(timer); timer = null; setState('saving');
+    let ok = true, cloudErr = null, c = null;
     try {
-      const snap = snapshot();
+      const snap = snapshot(); snap.dev = DEV;
       const live = new Map(); GV.sources.forEach(s => s.layers.forEach(l => { if (l.saveKey) live.set(l.saveKey, l); }));
-      // local
-      const have = new Set(await ikeys());
-      for (const m of snap.layers) if (!have.has('data:' + m.key)) { const l = live.get(m.key); if (l) await iset('data:' + m.key, layerData(l)); }
+      const prevLocal = await iget('ws'); const prevH = new Map(((prevLocal && prevLocal.layers) || []).map(m => [m.key, m.h]));
+      const have = new Set(await ikeys()); const datas = new Map();
+      for (const m of snap.layers) {
+        const l = live.get(m.key); if (!l) continue;
+        const d = layerData(l); m.h = hash(d); datas.set(m.key, d);
+        if (!have.has('data:' + m.key) || prevH.get(m.key) !== m.h) await iset('data:' + m.key, d);
+      }
       for (const s of GV.sources) if (s.isCad && s.cadInfo && s.cadInfo.blocks && s.saveKey) await iset('blk:' + s.saveKey, s.cadInfo.blocks);
       const localOK = await iset('ws', snap);
       for (const k of have) if ((k.startsWith('data:') && !snap.layers.some(m => 'data:' + m.key === k)) || (k.startsWith('blk:') && !snap.layers.some(m => 'blk:' + m.srcKey === k))) await idel(k);
       if (!localOK) ok = false;
-      // cloud
-      const c = await getCloud();
-      if (c) {
+      const sig = x => JSON.stringify(((x && x.layers) || []).map(m => Object.assign({}, m, { count: 0 })));
+      const changed = !prevLocal || sig(prevLocal) !== sig(snap);
+      if (changed) unsynced.set(true);
+      c = await getCloud();
+      if (c && (changed || unsynced.get() || manual)) {
         try {
-          const prev = (await c.ref.get()); const pd = prev.exists ? prev.data() : null;
-          const prevAssets = new Map(((pd && pd.layers) || []).filter(m => m.assetId).map(m => [m.key, m]));
+          const pd = await c.getMeta();
+          if (pd && pd.savedAt && seen.get() && pd.savedAt !== seen.get() && pd.dev !== DEV) { cloudErr = 'newer'; throw Object.assign(new Error('newer'), { soft: 1 }); }
+          const prev = new Map(((pd && pd.layers) || []).map(m => [m.key, m]));
           const cl = [];
           for (const m of snap.layers) {
-            const o = Object.assign({}, m);
-            const p = prevAssets.get(m.key);
-            if (p) { o.assetId = p.assetId; o.url = p.url; }
-            else {
-              const l = live.get(m.key); const data = l ? layerData(l) : null;
-              if (data && data.length < 19.5 * 1048576) { const a = await c.assets.upload(new Blob([data], { type: 'application/json' })); o.assetId = a.id; o.url = a.url; }
-              else o.tooBig = true;
-            }
+            const o = Object.assign({}, m); const p = prev.get(m.key);
+            if (p && p.h && p.h === m.h && (p.cid || p.assetId)) { ['cid', 'sha', 'assetId', 'url'].forEach(k => { if (p[k] != null) o[k] = p[k]; }); }
+            else { const d = datas.get(m.key); if (d != null) Object.assign(o, await c.putLayer(m.key, d, p)); }
             cl.push(o);
           }
-          await c.ref.set(Object.assign({}, snap, { layers: cl }));
-          for (const [k, p] of prevAssets) if (!cl.some(m => m.key === k)) c.assets.delete(p.assetId).catch(() => { });
-          cloudOK = true;
+          await c.putMeta(Object.assign({}, snap, { layers: cl }));
+          for (const [k, p] of prev) if (!cl.some(m => m.key === k)) await c.delLayer(p);
+          seen.set(snap.savedAt); unsynced.set(false); cloudOK = true;
           if (cl.some(m => m.tooBig)) cloudErr = 'big';
-        } catch (e) { cloudErr = e && (e.code || e.message) || 'err'; cloudOK = false; }
+        } catch (e) { if (!e.soft) { cloudErr = e && (e.message || e.code) || 'err'; cloudOK = false; } }
       }
       lastSaved = new Date();
       setState(ok ? 'saved' : 'error', cloudErr);
-      if (manual) GV.toast(cloudErr ? 'اتحفظ على الجهاز ده' + (cloudErr === 'big' ? ' (فيه طبقة أكبر من 20 MB مش هتتزامن مع باقي أجهزتك)' : ' بس مش على حسابك') : (c ? 'اتحفظ على الجهاز وعلى حسابك ✓' : 'اتحفظ ✓'), 4000);
+      if (cloudErr === 'newer') checkRemote(true);
+      else if (manual) GV.toast(cloudErr ? 'اتحفظ على الجهاز ده' + (cloudErr === 'big' ? ' (فيه طبقة أكبر من 20 MB مش هتتزامن مع باقي أجهزتك)' : ' بس المزامنة وقفت: ' + cloudErr) : (c ? 'اتحفظ على الجهاز واتزامن ✓' : 'اتحفظ ✓'), 4000);
     } catch (e) { setState('error'); }
     saving = false;
     if (again) { again = false; saveNow(); }
@@ -8629,47 +8679,93 @@ return ret;
   }
   async function restore() {
     const local = await iget('ws');
-    let c = null, cd = null;
-    const localTime = local ? Date.parse(local.savedAt) : 0;
     const localP = local && local.layers && local.layers.length ? hydrate(local, m => iget('data:' + m.key)) : Promise.resolve(false);
     let restoredLocal = false;
     try { restoredLocal = await localP; } catch (e) { }
     if (restoredLocal) { lastSaved = new Date(local.savedAt); GV.toast('رجّعت شغلك اللي فات ✓'); }
-    // cloud: newer copy from another device?
-    try {
-      c = await getCloud();
-      if (c) { const d = await c.ref.get(); cd = d.exists ? d.data() : null; }
-    } catch (e) { }
-    if (cd && cd.layers && cd.layers.length && Date.parse(cd.savedAt) > localTime + 2000) {
-      if (!restoredLocal) { await loadCloud(cd); }
-      else offerCloud(cd);
-    }
     restoring = false;
     setState(lastSaved || restoredLocal ? 'saved' : 'idle');
+    await checkRemote();
   }
-  async function loadCloud(cd) {
-    $('#busy').classList.add('show'); $('#busyText').textContent = 'بجيب شغلك من حسابك…';
+  // Pull a newer workspace saved from another device. Automatic unless this device has its own unsynced changes.
+  let checking = false;
+  async function checkRemote(force) {
+    if (checking || saving || restoring) return; checking = true;
+    try {
+      const c = await getCloud(); if (!c) return;
+      let cd = null; try { cd = await c.getMeta(); } catch (e) { cloudOK = false; renderSaveSheet(e.message); return; }
+      cloudOK = true;
+      const hasLocal = GV.sources.some(s => s.id !== 'field' && s.id !== 'qc' && s.layers.length);
+      if (!cd || !cd.layers || !cd.layers.length) { if (hasLocal && auto) onDirty(); return; }
+      if (cd.savedAt === seen.get() && !force) return;
+      if (!hasLocal) { await loadCloud(cd); return; }
+      if (!seen.get() || unsynced.get()) { offerCloud(cd); return; }
+      await loadCloud(cd, true);
+    } finally { checking = false; }
+  }
+  GV.syncCheck = checkRemote;
+  async function loadCloud(cd, silent) {
+    const c = await getCloud(); if (!c) return;
+    $('#busy').classList.add('show'); $('#busyText').textContent = 'بجيب آخر نسخة من شغلك…';
+    const view = { c: GV.map.getCenter(), z: GV.map.getZoom() };
     try {
       restoring = true;
       GV.sources.filter(s => s.id !== 'field').slice().forEach(s => GV.removeSource(s));
-      const ok = await hydrate(cd, async m => { if (!m.url && !m.assetId) return null; const r = await fetch(m.url || ('/_blob/' + m.assetId)); return r.ok ? await r.text() : null; });
+      const ok = await hydrate(cd, m => c.getLayer(m));
+      if (silent) GV.map.setView(view.c, view.z, { animate: false });
       GV.sources.filter(s => s.isCopy && s.origName).forEach(c => { const o = GV.sources.find(x => x.name === c.origName && !x.isCopy); if (o) { o.copyRef = c; o.isOrig = true; } }); GV.renderLayers(); GV.updateEmpty();
-      if (ok) GV.toast('رجّعت شغلك من حسابك ✓');
-      restoring = false; saveLocalOnly();
-    } catch (e) { GV.showMsg('مقدرتش أجيب الشغل المحفوظ على حسابك: ' + (e.message || e)); }
+      if (ok) GV.toast(silent ? '🔄 اتحدّث شغلك من جهازك التاني' : 'رجّعت شغلك من ' + c.label + ' ✓', 3500);
+      seen.set(cd.savedAt); unsynced.set(false);
+      restoring = false; await saveLocalOnly(cd.layers);
+    } catch (e) { GV.showMsg('مقدرتش أجيب الشغل المتزامن: ' + (e.message || e)); }
     finally { restoring = false; $('#busy').classList.remove('show'); }
   }
-  async function saveLocalOnly() {
+  async function saveLocalOnly(hs) {
+    const hm = new Map((hs || []).map(m => [m.key, m.h]));
     const snap = snapshot(); const live = new Map(); GV.sources.forEach(s => s.layers.forEach(l => { if (l.saveKey) live.set(l.saveKey, l); }));
-    for (const m of snap.layers) { const l = live.get(m.key); if (l) await iset('data:' + m.key, layerData(l)); }
+    for (const m of snap.layers) { const l = live.get(m.key); if (l) { const d = layerData(l); m.h = hm.get(m.key) || hash(d); await iset('data:' + m.key, d); } }
     await iset('ws', snap); lastSaved = new Date(); setState('saved');
   }
   function offerCloud(cd) {
     const n = $('#syncOffer'); n.classList.add('show');
-    $('#syncOfferTxt').textContent = 'فيه نسخة أحدث من شغلك متحفوظة من جهاز تاني (' + new Date(cd.savedAt).toLocaleString('en-GB') + ').';
+    $('#syncOfferTxt').textContent = 'فيه نسخة أحدث من شغلك اتحفظت من جهاز تاني (' + new Date(cd.savedAt).toLocaleString('en-GB') + ')، والجهاز ده كمان فيه تعديلات لسه ماتزامنتش. تحب تاخد أنهي؟';
     $('#syncOfferYes').onclick = () => { n.classList.remove('show'); loadCloud(cd); };
-    $('#syncOfferNo').onclick = () => { n.classList.remove('show'); onDirty(); };
+    $('#syncOfferNo').onclick = () => { n.classList.remove('show'); seen.set(cd.savedAt); onDirty(); };
   }
+
+  /* ---------- sync setup (GitHub private repo) ---------- */
+  function renderSync() {
+    let box = $('#syncBox');
+    if (!box) { const foot = $('#saveBody .fb-foot'); if (!foot) return; box = el('div'); box.id = 'syncBox'; box.style.cssText = 'border:1px solid var(--line,#ccd);border-radius:12px;padding:10px 12px;margin:10px 0;line-height:1.7'; foot.parentNode.insertBefore(box, foot); }
+    if (window.claude && window.claude.use && !ghCfg()) { box.style.display = 'none'; return; }
+    box.style.display = ''; box.innerHTML = '';
+    const g = ghCfg();
+    box.appendChild(el('b', '', '🔄 مزامنة بين أجهزتك (لابتوب + موبايل)'));
+    if (g) {
+      box.appendChild(el('div', 'muted small', (cloudOK ? '✅ متوصل' : '⚠️ متوصل بس آخر مزامنة ماكملتش') + ' — الريبو: ' + g.repo));
+      const row = el('div', 'mp-btns');
+      const now = el('button', 'chip', 'زامن دلوقتي'); now.onclick = async () => { await checkRemote(true); if (!$('#syncOffer').classList.contains('show')) saveNow(true); };
+      const cp = el('button', 'chip', '📋 انسخ كود الربط لجهاز تاني'); cp.onclick = () => { const code = 'GVSYNC:' + btoa(JSON.stringify(g)); (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => GV.toast('اتنسخ — الصقه في نفس المكان على الجهاز التاني'), () => GV.askText ? GV.askText('انسخ الكود ده', code) : GV.showMsg(code)); };
+      const off = el('button', 'chip danger', 'افصل المزامنة'); off.onclick = () => { GV.store.set('gv_ghsync', ''); cloud = null; seen.set(''); renderSaveSheet(); GV.toast('اتفصلت المزامنة على الجهاز ده (شغلك لسه موجود)'); };
+      row.append(now, cp, off); box.appendChild(row); return;
+    }
+    box.appendChild(el('div', 'muted small', 'الصق كود الربط (لو وصّلت جهاز قبل كده) أو اكتب اسم الريبو والتوكن:'));
+    const inp = el('input'); inp.placeholder = 'كود الربط  أو  التوكن (github_pat_…)'; inp.style.cssText = 'width:100%;margin:6px 0;direction:ltr'; inp.autocomplete = 'off';
+    const rp = el('input'); rp.placeholder = 'الريبو: Ah7medshahin/gis-data'; rp.value = (location.hostname.match(/^([^.]+)\.github\.io$/) ? location.hostname.split('.')[0] : 'Ah7medshahin') + '/gis-data'; rp.style.cssText = 'width:100%;margin:0 0 6px;direction:ltr';
+    const go = el('button', 'chip done', 'وصّل'); const msg = el('div', 'small');
+    go.onclick = async () => {
+      let cfg = null; const v = inp.value.trim();
+      if (/^GVSYNC:/.test(v)) { try { cfg = JSON.parse(atob(v.slice(7))); } catch (e) { } }
+      else if (v) cfg = { token: v, repo: rp.value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '') };
+      if (!cfg || !cfg.token || !/^[^/\s]+\/[^/\s]+$/.test(cfg.repo || '')) { msg.textContent = 'الكود أو اسم الريبو مش مظبوط'; return; }
+      go.disabled = true; msg.textContent = '⏳ بجرّب الاتصال…';
+      try { const t = ghCloud(cfg); await t.getMeta(); GV.store.set('gv_ghsync', JSON.stringify(cfg)); cloud = t; seen.set(''); msg.textContent = '✅ اتوصل'; GV.toast('✅ المزامنة اشتغلت'); await checkRemote(true); if (!$('#syncOffer').classList.contains('show')) saveNow(true); renderSaveSheet(); }
+      catch (e) { msg.textContent = '❌ ' + (e.message || e); go.disabled = false; }
+    };
+    box.append(inp, rp, go, msg);
+  }
+  setInterval(() => { if (!document.hidden && ghCfg()) checkRemote(); }, 90 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(checkRemote, 800); });
 
   /* ---------- UI ---------- */
   function setState(s, cloudErr) {
@@ -8682,7 +8778,8 @@ return ret;
     const box = $('#saveBody'); if (!box) return;
     const st = $('#btnSave').dataset.state;
     $('#saveStatus').textContent = st === 'saving' ? 'بيحفظ دلوقتي…' : st === 'pending' ? 'فيه تغييرات هتتحفظ كمان ثواني' : lastSaved ? 'آخر حفظ: ' + lastSaved.toLocaleTimeString('en-GB') : 'لسه متحفظش حاجة';
-    $('#saveWhere').textContent = cloud ? (cloudOK ? 'على الجهاز ده وعلى حسابك. هتلاقيه على أي جهاز تفتح منه الرابط.' : 'على الجهاز ده.' + (cloudErr && cloudErr !== 'big' ? ' الحفظ على حسابك مش شغال دلوقتي.' : '')) : 'على الجهاز ده (في المتصفح). علشان يتزامن بين أجهزتك افتح التطبيق من رابط Claude.';
+    $('#saveWhere').textContent = cloud ? (cloudOK ? 'على الجهاز ده ومتزامن مع ' + cloud.label + '. أي جهاز متوصل بنفس المزامنة بيشوف نفس الشغل لوحده.' : 'على الجهاز ده.' + (cloudErr && cloudErr !== 'big' && cloudErr !== 'newer' ? ' المزامنة مش شغالة دلوقتي: ' + cloudErr : '')) : 'على الجهاز ده بس. وصّل المزامنة تحت عشان شغلك يظهر على كل أجهزتك.';
+    renderSync();
     $('#saveAuto').checked = auto;
   }
   $('#btnSave').addEventListener('click', () => { renderSaveSheet(); GV.openSheet('#saveSheet'); });
@@ -8693,7 +8790,7 @@ return ret;
     b.dataset.c = ''; b.textContent = 'امسح الشغل المحفوظ';
     for (const k of await ikeys()) await idel(k);
     const c = await getCloud();
-    if (c) { try { const d = await c.ref.get(); if (d.exists) { ((d.data().layers) || []).forEach(m => m.assetId && c.assets.delete(m.assetId).catch(() => { })); await c.ref.delete(); } } catch (e) { } }
+    if (c) { try { await c.clear(); seen.set(''); } catch (e) { } }
     lastSaved = null; auto = false; GV.store.set('gv_autosave', '0'); setState('idle');
     GV.toast('اتمسح الشغل المحفوظ، والحفظ التلقائي اتقفل');
   });
