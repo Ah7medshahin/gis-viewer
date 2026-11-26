@@ -690,7 +690,7 @@
   const KIND_AR = { point: 'نقاط', line: 'خطوط', polygon: 'مضلعات', mixed: 'مختلط', table: 'جدول' };
   // ---- layer groups: your own named folders for CAD or database layers (remembered) ----
   let LG = []; try { LG = JSON.parse(store.get('gv_lgroups') || '[]'); } catch (e) { }
-  const saveLG = () => store.set('gv_lgroups', JSON.stringify(LG));
+  const saveLG = () => { store.set('gv_lgroups', JSON.stringify(LG)); if (GV.onDirty) GV.onDirty(); };
   let autoGrp = store.get('gv_autogrp') === '1';
   function groupPerFile(srcs) {
     let n = 0;
@@ -828,6 +828,16 @@
     const ok = el('button', 'chip ok', 'تمام'); const done = v => { w.remove(); res(v); }; ok.onclick = () => done(inp.value); x.onclick = () => done(null); inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value); else if (e.key === 'Escape') done(null); };
     w.append(h, inp, ok); document.body.appendChild(w); inp.focus(); inp.select(); }); }
   GV.askText = askText;
+  // groups travel with the saved / synced workspace
+  GV.lgState = () => ({ groups: LG.map(g => ({ id: g.id, name: g.name, keys: g.keys, open: g.open })), grpId: l => { const g = grpOf(l); return g ? g.id : ''; } });
+  GV.lgApply = (groups, byKey) => {
+    if (!Array.isArray(groups)) return;
+    const open = new Map(LG.map(g => [g.id, g.open]));
+    LG = groups.map(g => Object.assign({}, g, { open: open.has(g.id) ? open.get(g.id) : g.open }));
+    store.set('gv_lgroups', JSON.stringify(LG));
+    allLayers().forEach(l => { if (l.saveKey && byKey && byKey.has(l.saveKey)) l._grp = byKey.get(l.saveKey) || ''; });
+    renderLayers();
+  };
   GV.groupsList = () => { const all = sources.flatMap(x => x.layers); return LG.map(g => ({ name: g.name, id: g.id, layers: all.filter(l => grpOf(l) === g) })).filter(x => x.layers.length); };
   function applySel(l) { if (!l.leaf || !l.leaf.eachLayer) return; const v = l.noSelect ? 'none' : ''; l.leaf.eachLayer(x => { const go = y => { if (y.options && !y.eachLayer) y.options.interactive = !l.noSelect; if (y._path) y._path.style.pointerEvents = v; if (y._icon) y._icon.style.pointerEvents = v; if (y.eachLayer) y.eachLayer(go); }; go(x); }); }
   // layers locked for selection stay locked (also after closing and reopening the app) until unlocked by hand

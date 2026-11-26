@@ -89,7 +89,9 @@
       });
     });
     const c = GV.map.getCenter();
-    return { v: VER, savedAt: new Date().toISOString(), view: { lat: c.lat, lng: c.lng, z: GV.map.getZoom() }, base: GV.getBase(), layers };
+    const lg = GV.lgState ? GV.lgState() : null;
+    if (lg) layers.forEach(m => { const l = GV.sources.flatMap(s => s.layers).find(x => x.saveKey === m.key); m.grp = l ? lg.grpId(l) : ''; });
+    return { v: VER, savedAt: new Date().toISOString(), view: { lat: c.lat, lng: c.lng, z: GV.map.getZoom() }, base: GV.getBase(), layers, groups: lg ? lg.groups.map(g => ({ id: g.id, name: g.name, keys: g.keys })) : undefined };
   }
   function layerData(l) {
     return JSON.stringify(l.features.map(f => { const o = { p: f.properties || {}, g: f.geometry || null }; if (f._color) o.c = f._color; if (f._sym) o.s = 1; if (f._ins) o.i = f._ins; return o; }));
@@ -122,7 +124,7 @@
       const localOK = await iset('ws', snap);
       for (const k of have) if ((k.startsWith('data:') && !snap.layers.some(m => 'data:' + m.key === k)) || (k.startsWith('blk:') && !snap.layers.some(m => 'blk:' + m.srcKey === k))) await idel(k);
       if (!localOK) ok = false;
-      const sig = x => JSON.stringify(((x && x.layers) || []).map(m => Object.assign({}, m, { count: 0 })));
+      const sig = x => JSON.stringify([((x && x.layers) || []).map(m => Object.assign({}, m, { count: 0 })), (x && x.groups) || null]);
       const changed = !prevLocal || sig(prevLocal) !== sig(snap);
       if (changed) unsynced.set(true);
       c = await getCloud();
@@ -181,6 +183,7 @@
       }
     });
     GV.sources.filter(s => s.isCopy && s.origName).forEach(c => { const o = GV.sources.find(x => x.name === c.origName && !x.isCopy); if (o) { o.copyRef = c; o.isOrig = true; } }); GV.renderLayers();
+    if (snap.groups && GV.lgApply) GV.lgApply(snap.groups, new Map(snap.layers.map(m => [m.key, m.grp || ''])));
     if (snap.base) GV.setBase(snap.base);
     if (snap.view) GV.map.setView([snap.view.lat, snap.view.lng], snap.view.z, { animate: false });
     GV.refreshLabels();

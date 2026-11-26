@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <script type="application/json" id="claude-artifacts-manifest">{"permissions": ["full-access"]}</script>
-<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v28";
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v29";
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").then(r=>{window.GV_SWR=r}).catch(()=>{});
 const gvApply=v=>{const go=()=>location.replace(location.pathname+"?u="+v);Promise.all([window.caches?caches.keys().then(k=>Promise.all(k.map(x=>caches.delete(x)))):0,window.GV_SWR?GV_SWR.update().catch(()=>{}):0]).then(go,go)};
 const gvBar=v=>{if(document.getElementById("gvUpd")||!document.body)return;const b=document.createElement("div");b.id="gvUpd";b.textContent="🔄 فيه تحديث جديد للبرنامج — دوس هنا عشان يتحدّث";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#1565c0;color:#fff;padding:12px 18px;border-radius:24px;font:600 15px system-ui;box-shadow:0 4px 16px #0006;cursor:pointer;direction:rtl;max-width:92vw;text-align:center";b.onclick=()=>{b.textContent="⏳ بيتحدّث...";gvApply(v)};document.body.appendChild(b)};
@@ -3414,7 +3414,7 @@ return ret;
   const KIND_AR = { point: 'نقاط', line: 'خطوط', polygon: 'مضلعات', mixed: 'مختلط', table: 'جدول' };
   // ---- layer groups: your own named folders for CAD or database layers (remembered) ----
   let LG = []; try { LG = JSON.parse(store.get('gv_lgroups') || '[]'); } catch (e) { }
-  const saveLG = () => store.set('gv_lgroups', JSON.stringify(LG));
+  const saveLG = () => { store.set('gv_lgroups', JSON.stringify(LG)); if (GV.onDirty) GV.onDirty(); };
   let autoGrp = store.get('gv_autogrp') === '1';
   function groupPerFile(srcs) {
     let n = 0;
@@ -3552,6 +3552,16 @@ return ret;
     const ok = el('button', 'chip ok', 'تمام'); const done = v => { w.remove(); res(v); }; ok.onclick = () => done(inp.value); x.onclick = () => done(null); inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value); else if (e.key === 'Escape') done(null); };
     w.append(h, inp, ok); document.body.appendChild(w); inp.focus(); inp.select(); }); }
   GV.askText = askText;
+  // groups travel with the saved / synced workspace
+  GV.lgState = () => ({ groups: LG.map(g => ({ id: g.id, name: g.name, keys: g.keys, open: g.open })), grpId: l => { const g = grpOf(l); return g ? g.id : ''; } });
+  GV.lgApply = (groups, byKey) => {
+    if (!Array.isArray(groups)) return;
+    const open = new Map(LG.map(g => [g.id, g.open]));
+    LG = groups.map(g => Object.assign({}, g, { open: open.has(g.id) ? open.get(g.id) : g.open }));
+    store.set('gv_lgroups', JSON.stringify(LG));
+    allLayers().forEach(l => { if (l.saveKey && byKey && byKey.has(l.saveKey)) l._grp = byKey.get(l.saveKey) || ''; });
+    renderLayers();
+  };
   GV.groupsList = () => { const all = sources.flatMap(x => x.layers); return LG.map(g => ({ name: g.name, id: g.id, layers: all.filter(l => grpOf(l) === g) })).filter(x => x.layers.length); };
   function applySel(l) { if (!l.leaf || !l.leaf.eachLayer) return; const v = l.noSelect ? 'none' : ''; l.leaf.eachLayer(x => { const go = y => { if (y.options && !y.eachLayer) y.options.interactive = !l.noSelect; if (y._path) y._path.style.pointerEvents = v; if (y._icon) y._icon.style.pointerEvents = v; if (y.eachLayer) y.eachLayer(go); }; go(x); }); }
   // layers locked for selection stay locked (also after closing and reopening the app) until unlocked by hand
@@ -8582,7 +8592,9 @@ return ret;
       });
     });
     const c = GV.map.getCenter();
-    return { v: VER, savedAt: new Date().toISOString(), view: { lat: c.lat, lng: c.lng, z: GV.map.getZoom() }, base: GV.getBase(), layers };
+    const lg = GV.lgState ? GV.lgState() : null;
+    if (lg) layers.forEach(m => { const l = GV.sources.flatMap(s => s.layers).find(x => x.saveKey === m.key); m.grp = l ? lg.grpId(l) : ''; });
+    return { v: VER, savedAt: new Date().toISOString(), view: { lat: c.lat, lng: c.lng, z: GV.map.getZoom() }, base: GV.getBase(), layers, groups: lg ? lg.groups.map(g => ({ id: g.id, name: g.name, keys: g.keys })) : undefined };
   }
   function layerData(l) {
     return JSON.stringify(l.features.map(f => { const o = { p: f.properties || {}, g: f.geometry || null }; if (f._color) o.c = f._color; if (f._sym) o.s = 1; if (f._ins) o.i = f._ins; return o; }));
@@ -8615,7 +8627,7 @@ return ret;
       const localOK = await iset('ws', snap);
       for (const k of have) if ((k.startsWith('data:') && !snap.layers.some(m => 'data:' + m.key === k)) || (k.startsWith('blk:') && !snap.layers.some(m => 'blk:' + m.srcKey === k))) await idel(k);
       if (!localOK) ok = false;
-      const sig = x => JSON.stringify(((x && x.layers) || []).map(m => Object.assign({}, m, { count: 0 })));
+      const sig = x => JSON.stringify([((x && x.layers) || []).map(m => Object.assign({}, m, { count: 0 })), (x && x.groups) || null]);
       const changed = !prevLocal || sig(prevLocal) !== sig(snap);
       if (changed) unsynced.set(true);
       c = await getCloud();
@@ -8674,6 +8686,7 @@ return ret;
       }
     });
     GV.sources.filter(s => s.isCopy && s.origName).forEach(c => { const o = GV.sources.find(x => x.name === c.origName && !x.isCopy); if (o) { o.copyRef = c; o.isOrig = true; } }); GV.renderLayers();
+    if (snap.groups && GV.lgApply) GV.lgApply(snap.groups, new Map(snap.layers.map(m => [m.key, m.grp || ''])));
     if (snap.base) GV.setBase(snap.base);
     if (snap.view) GV.map.setView([snap.view.lat, snap.view.lng], snap.view.z, { animate: false });
     GV.refreshLabels();
