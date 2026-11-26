@@ -988,6 +988,14 @@ body.show-home .home-x{display:inline-block}
 #tblSheet .sel-tabs{margin:2px 0}
 #tblSheet .sel-tabs .chip{height:24px;padding:0 8px;font-size:12px}
 #tblSheet th,#tblSheet td{padding-top:4px;padding-bottom:4px}
+#tblSheet{display:flex;flex-direction:column}
+#tblSheet .tbl-wrap{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-width:auto;scrollbar-color:var(--accent) var(--bg)}
+#tblSheet .tbl-wrap::-webkit-scrollbar{height:14px;width:12px;background:var(--bg)}
+#tblSheet .tbl-wrap::-webkit-scrollbar-thumb{background:var(--accent);border-radius:7px;border:3px solid var(--bg)}
+#tblSheet .tbl-wrap:focus{outline:none}
+#tblSheet .tbl-wrap{scrollbar-width:none}#tblSheet .tbl-wrap::-webkit-scrollbar:horizontal{height:0}
+.tbl-hscroll{flex:none;position:relative;height:16px;margin:2px 10px 6px;border-radius:8px;background:var(--bg);border:1px solid var(--line);cursor:pointer}.hs-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;background:var(--accent);cursor:grab;touch-action:none}.hs-thumb:active{cursor:grabbing}
+.exp-grp{border:1px solid var(--line);border-radius:10px;padding:4px 8px;margin:4px 0}.exp-grp summary{cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 0;list-style:none}.exp-grp summary::-webkit-details-marker{display:none}.exp-arr{display:inline-block;width:18px;text-align:center;color:var(--accent);transition:transform .15s}.exp-grp[open] .exp-arr{transform:rotate(-90deg)}.exp-grp .ck{padding-inline-start:18px}
 .ctx-menu{position:fixed;z-index:3500;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:6px;min-width:220px;display:flex;flex-direction:column}.ctx-menu button{background:none;border:0;color:inherit;font:inherit;text-align:start;padding:9px 12px;border-radius:8px;cursor:pointer}.ctx-menu button:hover{background:var(--bg)}.ctx-menu .danger{color:var(--warn)}.ctx-h{font-weight:700;padding:6px 12px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}.ctx-sep{height:1px;background:var(--line);margin:4px 6px}
 .base-help{position:fixed;left:50%;bottom:calc(96px + var(--sb));transform:translateX(-50%);z-index:1200;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;gap:10px;align-items:center;max-width:92vw;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px}.base-help .btn{white-space:nowrap}
 </style>
@@ -1057,6 +1065,7 @@ body.show-home .home-x{display:inline-block}
   <div class="sh-head"><h2><span id="tblTitle"></span><span class="sub" id="tblCount"></span></h2><button class="icon-btn" data-close>✕</button></div>
   <div class="tbl-tools"><input id="tblSearch" type="search" placeholder="بحث في البيانات…"></div>
   <div class="tbl-wrap"><table id="tbl"></table><button class="chip" id="tblMore">عرض المزيد</button></div>
+  <div class="tbl-hscroll" id="tblHS" title="اسحب يمين وشمال — أو استخدم أسهم الكيبورد ← →"><div></div></div>
 </div>
 
 <div class="sheet" id="crsSheet">
@@ -3650,6 +3659,33 @@ return ret;
   // attribute table
   let tblLayer = null, tblLimit = 200, tblOnly = null, tblNote = '';
   let tblSel = null;
+  // keyboard: ←/→ scroll the table sideways, ↑/↓ scroll rows (Shift = faster), Home/End = first/last column — when not typing
+  document.addEventListener('keydown', e => {
+    const sh = $('#tblSheet'); if (!sh || !sh.classList.contains('open')) return;
+    const t = e.target; if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+    if (document.getElementById('edBar') && !document.getElementById('edBar').hidden && /^Arrow/.test(e.key) && !sh.matches(':hover')) return;
+    const w = sh.querySelector('.tbl-wrap'); if (!w) return; const k = e.shiftKey ? 3 : 1;
+    if (e.key === 'ArrowLeft') w.scrollBy({ left: -160 * k }); else if (e.key === 'ArrowRight') w.scrollBy({ left: 160 * k });
+    else if (e.key === 'ArrowUp') w.scrollBy({ top: -60 * k }); else if (e.key === 'ArrowDown') w.scrollBy({ top: 60 * k });
+    else if (e.key === 'Home') w.scrollTo({ left: getComputedStyle(w).direction === 'rtl' ? 0 : 0 }); else if (e.key === 'End') w.scrollTo({ left: getComputedStyle(w).direction === 'rtl' ? -w.scrollWidth : w.scrollWidth });
+    else return; e.preventDefault();
+  });
+  // a horizontal scroll bar that is always visible at the bottom of the table (drawn by the app, so it shows everywhere)
+  { const hs = $('#tblHS'), w = document.querySelector('#tblSheet .tbl-wrap');
+    if (hs && w) {
+      hs.textContent = ''; const th = document.createElement('div'); th.className = 'hs-thumb'; hs.appendChild(th);
+      const rtl = () => getComputedStyle(w).direction === 'rtl';
+      const max = () => Math.max(0, w.scrollWidth - w.clientWidth);
+      const pos = () => { const m = max(); const sl = rtl() ? -w.scrollLeft : w.scrollLeft; return m ? Math.min(1, Math.max(0, sl / m)) : 0; }; // 0 = start (right in RTL)
+      const draw = () => { const m = max(); hs.style.display = m > 2 ? '' : 'none'; if (!m) return; const tw = hs.clientWidth; const len = Math.max(40, tw * w.clientWidth / w.scrollWidth); th.style.width = len + 'px'; const off = (tw - len) * pos(); if (rtl()) { th.style.right = off + 'px'; th.style.left = 'auto'; } else { th.style.left = off + 'px'; th.style.right = 'auto'; } };
+      const setPos = f => { f = Math.min(1, Math.max(0, f)); const v = f * max(); w.scrollLeft = rtl() ? -v : v; };
+      let drag = null;
+      th.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); th.setPointerCapture(e.pointerId); drag = { x: e.clientX, p: pos() }; });
+      th.addEventListener('pointermove', e => { if (!drag) return; const tw = hs.clientWidth - th.offsetWidth; if (tw <= 0) return; const dx = (e.clientX - drag.x) / tw; setPos(drag.p + (rtl() ? -dx : dx)); });
+      th.addEventListener('pointerup', () => { drag = null; });
+      hs.addEventListener('pointerdown', e => { if (e.target !== hs) return; const r = hs.getBoundingClientRect(); const f = rtl() ? (r.right - e.clientX) / r.width : (e.clientX - r.left) / r.width; setPos(f); });
+      hs.addEventListener('wheel', e => { e.preventDefault(); w.scrollBy({ left: (e.deltaY || e.deltaX) }); }, { passive: false });
+      w.addEventListener('scroll', draw); new ResizeObserver(draw).observe(w); new MutationObserver(() => setTimeout(draw, 0)).observe(w, { childList: true, subtree: true }); GV.tblHSync = draw; } }
   function openTable(l, fromList, only, note) { if (!GV._keepSelTabs) { const tb = document.getElementById('tblSelTabs'); if (tb) tb.remove(); } tblLayer = l; tblLimit = 200; tblOnly = only && only.length ? new Set(only) : null; tblNote = tblOnly ? (note || '') : ''; $('#tblTitle').textContent = l.name; $('#tblSearch').value = ''; renderTable(); openSheet('#tblSheet', fromList ? { back: '#layerSheet' } : null); }
   function renderTable() {
     const l = tblLayer; if (!l) return;
@@ -4008,12 +4044,33 @@ return ret;
     const box = $('#expLayers'); box.textContent = '';
     const ls = allLayers();
     if (!ls.length) { GV.showMsg('افتح ملف الأول علشان تحوّله.'); return; }
-    ls.forEach(({ l, s }) => {
-      const lab = el('label', 'ck'); const cb = el('input'); cb.type = 'checkbox'; let SVL = {}; try { SVL = JSON.parse(GV.store.get('gv_explayers') || '{}'); } catch (e) { } cb.checked = pre ? pre.indexOf(l) >= 0 : (l.name in SVL ? !!SVL[l.name] : l.visible); cb._layer = l;
-      cb.addEventListener('change', () => { if (!expPre) { let M = {}; try { M = JSON.parse(GV.store.get('gv_explayers') || '{}'); } catch (e) { } M[l.name] = cb.checked; GV.store.set('gv_explayers', JSON.stringify(M)); } fillFields(); });
-      lab.append(cb, el('span', null, l.name), el('small', 'muted', ' · ' + s.name + ' · ' + l.features.length.toLocaleString('en')));
-      box.appendChild(lab);
-    });
+    const saveL = (l, on) => { if (!expPre) { let M = {}; try { M = JSON.parse(GV.store.get('gv_explayers') || '{}'); } catch (e) { } M[l.name] = on; GV.store.set('gv_explayers', JSON.stringify(M)); } };
+    let SVL = {}; try { SVL = JSON.parse(GV.store.get('gv_explayers') || '{}'); } catch (e) { }
+    const cbs = []; const grpCbs = [];
+    const refreshG = () => grpCbs.forEach(({ cb, list }) => { const n = list.filter(x => x.checked).length; cb.checked = n === list.length && n > 0; cb.indeterminate = n > 0 && n < list.length; });
+    const mkRow = ({ l, s }) => {
+      const lab = el('label', 'ck'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = pre ? pre.indexOf(l) >= 0 : (l.name in SVL ? !!SVL[l.name] : l.visible); cb._layer = l; cbs.push(cb);
+      cb.addEventListener('change', () => { saveL(l, cb.checked); refreshG(); fillFields(); });
+      lab.append(cb, el('span', null, l.name), el('small', 'muted', ' · ' + s.name + ' · ' + l.features.length.toLocaleString('en'))); return lab; };
+    const setOnly = keep => { cbs.forEach(c => { c.checked = keep(c._layer); saveL(c._layer, c.checked); }); refreshG(); fillFields(); };
+    // quick choices: all / none / one group
+    const groups = GV.groupsList ? GV.groupsList() : [];
+    const bar = el('div', 'qc-filt'); const chip = (t, fn) => { const b = el('button', 'chip', t); b.type = 'button'; b.onclick = fn; bar.appendChild(b); };
+    chip('الكل', () => setOnly(() => true)); chip('ولا حاجة', () => setOnly(() => false));
+    groups.forEach(g => chip('📁 ' + g.name + ' بس', () => { const set = new Set(g.layers); setOnly(l => set.has(l)); }));
+    box.appendChild(bar);
+    // groups as folders: tick the folder for all its layers, or open it and tick some
+    const inG = new Set();
+    groups.forEach(g => { const rows = ls.filter(x => g.layers.indexOf(x.l) >= 0); if (!rows.length) return; rows.forEach(x => inG.add(x.l));
+      const d = el('details', 'exp-grp'); const sm = el('summary'); const gcb = el('input'); gcb.type = 'checkbox'; gcb.onclick = e => e.stopPropagation();
+      sm.append(el('span', 'exp-arr', '◀'), gcb, el('b', null, ' 📁 ' + g.name), el('small', 'muted', ' · ' + rows.length + ' طبقة — دوس السهم عشان تختار طبقات منه')); d.appendChild(sm);
+      const list = []; rows.forEach(x => { const r = mkRow(x); list.push(cbs[cbs.length - 1]); d.appendChild(r); });
+      gcb.addEventListener('change', () => { list.forEach(c => { c.checked = gcb.checked; saveL(c._layer, c.checked); }); refreshG(); fillFields(); });
+      grpCbs.push({ cb: gcb, list }); box.appendChild(d); });
+    const rest = ls.filter(x => !inG.has(x.l));
+    if (rest.length && inG.size) box.appendChild(el('div', 'muted small', 'طبقات مش في جروب'));
+    rest.forEach(x => box.appendChild(mkRow(x)));
+    refreshG();
     const fb = $('#expFmts');
     if (!fb.children.length) {
       const saved = (GV.store.get('gv_expfmts') || 'gpkg').split(',');
@@ -4025,7 +4082,7 @@ return ret;
     fillFields(); updFmtHints();
     GV.openSheet('#expSheet');
   }
-  function selLayers() { return Array.from(document.querySelectorAll('#expLayers input')).filter(c => c.checked).map(c => c._layer); }
+  function selLayers() { return Array.from(document.querySelectorAll('#expLayers input')).filter(c => c.checked && c._layer).map(c => c._layer); }
   function unionFields(layers) { const seen = new Set(), out = []; layers.forEach(l => GV.fieldsOf(l).forEach(k => { if (!seen.has(k)) { seen.add(k); out.push(k); } })); return out; }
   function fillFields() {
     const fields = unionFields(selLayers()); selLayers().forEach(l => (l.schemaFields || []).forEach(k => { if (fields.indexOf(k) < 0) fields.push(k); }));
