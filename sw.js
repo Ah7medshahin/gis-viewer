@@ -1,5 +1,5 @@
 // Network-first: always the latest version when online; cached copy when offline.
-const C='gisv-v20';
+const C='gisv-v21';
 self.addEventListener('install',e=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==location.origin)return;

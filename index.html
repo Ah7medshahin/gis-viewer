@@ -3260,6 +3260,7 @@ return ret;
       else g.eachLayer(x => x.options.interactive = false);
       g.addTo(fg);
     });
+    fg.on('add', () => { if (layer.noSelect) setTimeout(() => applySel(layer), 0); }); // lock survives rebuilds/restores
     return fg;
   }
 
@@ -3288,7 +3289,7 @@ return ret;
     }
     if (opts.before) opts.before(added);
     if (!opts.quiet && GV.onCadLoaded) added.filter(s => s.isCad).forEach(s => setTimeout(() => GV.onCadLoaded(s), 400));
-    { const NS = noSelSet(); if (NS.size) added.forEach(sr => sr.layers.forEach(l => { if (keysOf(l).some(k => NS.has(k))) { l.noSelect = true; } })); }
+    { const NS = noSelSet(); if (NS.size) added.forEach(sr => sr.layers.forEach(l => { if (keysOf(l).some(k => NS.has(k)) || NS.has('*::' + l.name)) { l.noSelect = true; } })); }
     for (const g of sources) for (const l of g.layers) if (l.leaf && !l._shown) { l._shown = true; if (l.visible) l.leaf.addTo(map); const b = l.leaf.getBounds(); if (b.isValid()) bounds = bounds ? bounds.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast()); }
     renderLayers();
     added.forEach(sr => sr.layers.forEach(l => { if (l.noSelect) applySel(l); }));
@@ -3537,10 +3538,10 @@ return ret;
     w.append(h, inp, ok); document.body.appendChild(w); inp.focus(); inp.select(); }); }
   GV.askText = askText;
   GV.groupsList = () => { const all = sources.flatMap(x => x.layers); return LG.map(g => ({ name: g.name, id: g.id, layers: all.filter(l => grpOf(l) === g) })).filter(x => x.layers.length); };
-  function applySel(l) { if (!l.leaf || !l.leaf.eachLayer) return; const v = l.noSelect ? 'none' : ''; l.leaf.eachLayer(x => { const go = y => { if (y._path) y._path.style.pointerEvents = v; if (y._icon) y._icon.style.pointerEvents = v; if (y.eachLayer) y.eachLayer(go); }; go(x); }); }
+  function applySel(l) { if (!l.leaf || !l.leaf.eachLayer) return; const v = l.noSelect ? 'none' : ''; l.leaf.eachLayer(x => { const go = y => { if (y.options && !y.eachLayer) y.options.interactive = !l.noSelect; if (y._path) y._path.style.pointerEvents = v; if (y._icon) y._icon.style.pointerEvents = v; if (y.eachLayer) y.eachLayer(go); }; go(x); }); }
   // layers locked for selection stay locked (also after closing and reopening the app) until unlocked by hand
   function noSelSet() { try { return new Set(JSON.parse(store.get('gv_nosel') || '[]')); } catch (e) { return new Set(); } }
-  function setSelectable(l, on) { l.noSelect = !on; { const NS = noSelSet(); keysOf(l).forEach(k => { if (on) NS.delete(k); else NS.add(k); }); store.set('gv_nosel', JSON.stringify([...NS])); } applySel(l); renderLayers(); dirty(); toast(on ? 'السيليكت اتفتح على «' + l.name + '»' : 'السيليكت اتقفل على «' + l.name + '» — الكليك بيعدّي للي تحتها'); }
+  function setSelectable(l, on) { l.noSelect = !on; { const NS = noSelSet(); keysOf(l).concat(['*::' + l.name]).forEach(k => { if (on) NS.delete(k); else NS.add(k); }); store.set('gv_nosel', JSON.stringify([...NS])); } applySel(l); renderLayers(); dirty(); toast(on ? 'السيليكت اتفتح على «' + l.name + '»' : 'السيليكت اتقفل على «' + l.name + '» — الكليك بيعدّي للي تحتها'); }
   function applyOrder() { sources.forEach(src => src.layers.slice().reverse().forEach(l => { if (l.leaf && l.visible && map.hasLayer(l.leaf) && l.leaf.bringToFront) { try { l.leaf.bringToFront(); } catch (e) { } } if (l.noSelect) applySel(l); })); }
   const srcOf = l => sources.find(x => x.layers.indexOf(l) >= 0);
   function moveLayer(l, how) {
