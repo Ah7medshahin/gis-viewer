@@ -3177,6 +3177,13 @@ return ret;
 
   /* ---------------- map ---------------- */
   const map = L.map('map', { zoomControl: false, preferCanvas: false, attributionControl: true, worldCopyJump: true }).setView([24.7, 46.7], 6);
+  // middle mouse button (wheel press) = pan, in every mode (select, box, move…), like CAD / GIS desktop apps
+  { const mc = map.getContainer(); let mp = null;
+    mc.addEventListener('mousedown', e => { if (e.button !== 1) return; e.preventDefault(); e.stopPropagation(); mp = [e.clientX, e.clientY]; mc.classList.add('mpan'); }, true);
+    window.addEventListener('mousemove', e => { if (!mp) return; const dx = e.clientX - mp[0], dy = e.clientY - mp[1]; mp = [e.clientX, e.clientY]; if (dx || dy) map.panBy([-dx, -dy], { animate: false }); }, true);
+    window.addEventListener('mouseup', e => { if (!mp || e.button !== 1) return; mp = null; mc.classList.remove('mpan'); e.preventDefault(); }, true);
+    mc.addEventListener('auxclick', e => { if (e.button === 1) e.preventDefault(); });
+    const st0 = document.createElement('style'); st0.textContent = '#map.mpan,#map.mpan *{cursor:grabbing!important}'; document.head.appendChild(st0); }
   map.attributionControl.setPrefix(false);
   const canvas = L.canvas({ padding: 0.5, tolerance: 8 });
   const BASEMAPS = {
