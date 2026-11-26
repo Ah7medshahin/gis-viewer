@@ -1817,8 +1817,8 @@ return ret;
       const it = catalog.features.find(ft => /^GDB_Items$/i.test(ft.properties.Name || '')); const iid = it ? (it.properties.ID || it.properties.OBJECTID) : 4;
       const ib = 'a' + Number(iid).toString(16).padStart(8, '0'); const itb = get(ib + '.gdbtable');
       if (itb) { const items = readTable(itb, get(ib + '.gdbtablx')).features; const DOM = {}; const tag = (x, t) => { const m = new RegExp('<' + t + '>([\\s\\S]*?)</' + t + '>').exec(x); return m ? m[1] : null; }; const unx = v => v == null ? v : v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
-        items.forEach(r => { const d = String(r.properties.Definition || ''); if (/^<GPCodedValueDomain2/.test(d)) { const nm = unx(tag(d, 'DomainName')); const ft = tag(d, 'FieldType') || ''; const codes = []; (d.match(/<CodedValue [\s\S]*?<\/CodedValue>/g) || []).forEach(cv => { const n2 = unx(tag(cv, 'Name')); const c = unx((/<Code\b[^>]*>([\s\S]*?)<\/Code>/.exec(cv) || [])[1]); codes.push({ code: /Integer|Double|Single/.test(ft) && c != null && c !== '' && isFinite(+c) ? +c : c, name: n2 }); }); DOM[nm] = { name: nm, type: ft, codes }; } else if (/^<GPRangeDomain2/.test(d)) { const nm = unx(tag(d, 'DomainName')); DOM[nm] = { name: nm, range: [+tag(d, 'MinValue'), +tag(d, 'MaxValue')] }; } });
-        items.forEach(r => { const d = String(r.properties.Definition || ''); if (!/^<DE(FeatureClass|Table)Info/.test(d)) return; const nm = String(r.properties.Name || '').split(/[\\.]/).pop(); const L = layers.find(l => l.name === nm || l.name.toLowerCase() === nm.toLowerCase()); if (!L) return;
+        items.forEach(r => { const d = String(r.properties.Definition || ''); if (/^(<\?xml[^>]*>\s*)?<(\w+:)?GPCodedValueDomain2/.test(d)) { const nm = unx(tag(d, 'DomainName')); const ft = tag(d, 'FieldType') || ''; const codes = []; (d.match(/<CodedValue [\s\S]*?<\/CodedValue>/g) || []).forEach(cv => { const n2 = unx(tag(cv, 'Name')); const c = unx((/<Code\b[^>]*>([\s\S]*?)<\/Code>/.exec(cv) || [])[1]); codes.push({ code: /Integer|Double|Single/.test(ft) && c != null && c !== '' && isFinite(+c) ? +c : c, name: n2 }); }); DOM[nm] = { name: nm, type: ft, codes }; } else if (/^(<\?xml[^>]*>\s*)?<(\w+:)?GPRangeDomain2/.test(d)) { const nm = unx(tag(d, 'DomainName')); DOM[nm] = { name: nm, range: [+tag(d, 'MinValue'), +tag(d, 'MaxValue')] }; } });
+        items.forEach(r => { const d = String(r.properties.Definition || ''); if (!/^(<\?xml[^>]*>\s*)?<(\w+:)?DE(FeatureClass|Table)Info/.test(d)) return; const nm = String(r.properties.Name || '').split(/[\\.]/).pop(); const L = layers.find(l => l.name === nm || l.name.toLowerCase() === nm.toLowerCase()); if (!L) return;
           const fd = {}; (d.match(/<GPFieldInfoEx [\s\S]*?<\/GPFieldInfoEx>/g) || []).forEach(x => { const f = tag(x, 'Name'), dn = tag(x, 'DomainName'); if (f && dn && DOM[unx(dn)]) fd[f] = unx(dn); });
           const sfn = tag(d, 'SubtypeFieldName'); let st = null; if (sfn) { st = { field: sfn, list: [] }; (d.match(/<Subtype [\s\S]*?<\/Subtype>/g) || []).forEach(x => { const fdm = {}; (x.match(/<SubtypeFieldInfo [\s\S]*?<\/SubtypeFieldInfo>/g) || []).forEach(y => { const f = tag(y, 'FieldName'), dn = tag(y, 'DomainName'); if (f && dn && DOM[unx(dn)]) fdm[f] = unx(dn); }); st.list.push({ code: +tag(x, 'SubtypeCode'), name: unx(tag(x, 'SubtypeName')), fieldDomains: fdm }); }); if (!st.list.length) st = null; }
           L.domains = fd; L.subtypes = st; L.domainDefs = DOM; });
@@ -2401,7 +2401,7 @@ return ret;
     if (srsId === -1 && wkt) { srsId = 100000; db.run('INSERT INTO gpkg_spatial_ref_sys VALUES (?,?,?,?,?,NULL)', ['custom', srsId, 'NONE', srsId, wkt]); }
     db.run("CREATE TABLE gpkg_contents (table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT UNIQUE, description TEXT DEFAULT '', last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE, srs_id INTEGER)");
     db.run('CREATE TABLE gpkg_geometry_columns (table_name TEXT NOT NULL, column_name TEXT NOT NULL, geometry_type_name TEXT NOT NULL, srs_id INTEGER NOT NULL, z TINYINT NOT NULL, m TINYINT NOT NULL, CONSTRAINT pk_geom_cols PRIMARY KEY (table_name, column_name))');
-    const usedT = new Set();
+    const usedT = new Set(); const domRows = [];
     for (const l of layers) {
       let tn = String(l.name).replace(/[^\p{L}\p{N}_]/gu, '_') || 'layer'; let b = tn, k = 2; while (usedT.has(tn.toLowerCase())) tn = b + '_' + k++; usedT.add(tn.toLowerCase());
       const hasGeom = !!l.gt || l.features.some(f => f.geometry);
@@ -2409,6 +2409,7 @@ return ret;
       const cols = l.fields.map(f => { if (l.types && l.types[f] && TM[l.types[f]]) return { src: f, name: String(f), type: TM[l.types[f]] }; const vals = l.features.map(x => x.properties[f]).filter(v => v != null && v !== ''); const num = vals.length && vals.every(isNum); return { src: f, name: String(f), type: num ? (vals.every(Number.isInteger) ? 'INTEGER' : 'REAL') : 'TEXT' }; });
       const seen = new Set(['fid', 'geom']); cols.forEach(c => { let n = c.name, k2 = 2; while (seen.has(n.toLowerCase())) n = c.name + '_' + k2++; seen.add(n.toLowerCase()); c.name = n; });
       const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+      if (l.dom) cols.forEach(c => { if (l.dom[c.src]) { domRows.push([tn, c.name, l.dom[c.src]]); if (c.type === 'INTEGER') c.type = 'MEDIUMINT'; } }); // GDAL reads INTEGER as Integer64; a 32-bit column keeps it matching the 32-bit domain
       db.run('CREATE TABLE ' + q(tn) + ' (fid INTEGER PRIMARY KEY AUTOINCREMENT' + (hasGeom ? ', geom BLOB' : '') + cols.map(c => ', ' + q(c.name) + ' ' + c.type).join('') + ')');
       const fams = new Set(l.features.filter(f => f.geometry).map(f => f.geometry.type));
       const gtn = l.gt || (fams.size === 1 ? [...fams][0].toUpperCase() : 'GEOMETRY');
@@ -2424,6 +2425,20 @@ return ret;
         stmt.run(vals);
       }
       db.run('COMMIT'); stmt.free();
+    }
+    // field domains (GeoPackage schema extension) → GDAL turns them into File Geodatabase domains
+    if (domRows.length) {
+      db.run('CREATE TABLE IF NOT EXISTS gpkg_extensions (table_name TEXT, column_name TEXT, extension_name TEXT NOT NULL, definition TEXT NOT NULL, scope TEXT NOT NULL, CONSTRAINT ge_tce UNIQUE (table_name, column_name, extension_name))');
+      db.run("INSERT INTO gpkg_extensions VALUES ('gpkg_data_columns',NULL,'gpkg_schema','http://www.geopackage.org/spec121/#extension_schema','read-write'),('gpkg_data_column_constraints',NULL,'gpkg_schema','http://www.geopackage.org/spec121/#extension_schema','read-write')");
+      db.run('CREATE TABLE gpkg_data_columns (table_name TEXT NOT NULL, column_name TEXT NOT NULL, name TEXT, title TEXT, description TEXT, mime_type TEXT, constraint_name TEXT, CONSTRAINT pk_gdc PRIMARY KEY (table_name, column_name), CONSTRAINT gdc_tn UNIQUE (table_name, name))');
+      db.run('CREATE TABLE gpkg_data_column_constraints (constraint_name TEXT NOT NULL, constraint_type TEXT NOT NULL, value TEXT, min NUMERIC, min_is_inclusive BOOLEAN, max NUMERIC, max_is_inclusive BOOLEAN, description TEXT, CONSTRAINT gdcc_ntv UNIQUE (constraint_name, constraint_type, value))');
+      const doneD = new Set();
+      domRows.forEach(([tn, col, d]) => {
+        const cn = String(d.name || (tn + '_' + col)); db.run('INSERT INTO gpkg_data_columns (table_name,column_name,constraint_name) VALUES (?,?,?)', [tn, col, cn]);
+        if (doneD.has(cn)) return; doneD.add(cn);
+        if (d.range) db.run("INSERT INTO gpkg_data_column_constraints VALUES (?,'range',NULL,?,1,?,1,?)", [cn, d.range[0], d.range[1], cn]);
+        else (d.codes || []).forEach(c => { try { db.run("INSERT INTO gpkg_data_column_constraints VALUES (?,'enum',?,NULL,NULL,NULL,NULL,?)", [cn, String(c.code), String(c.name == null ? c.code : c.name)]); } catch (e) { } });
+      });
     }
     const out = db.export(); db.close();
     return out;
@@ -2465,7 +2480,8 @@ return ret;
       const usedF = new Set(['objectid', 'shape', 'shape_length', 'shape_area']);
       const fmap = l.fields.filter(k => !RESERVED.test(k)).map(k => [k, gdbName(k, usedF, 'F')]);
       const types = {}; if (l.types) fmap.forEach(([a, b]) => { if (l.types[a]) types[b] = l.types[a]; });
-      const mk = (fm, feats) => ({ name: gdbName(l.name + (fams.length > 1 && fm !== 'None' ? '_' + FAM_AR[fm] : ''), usedL, 'L'), color: l.color, types, fields: fmap.map(x => x[1]), features: feats.map(f => { const p = {}; fmap.forEach(([a, b]) => { if (f.properties && a in f.properties) p[b] = f.properties[a]; }); return { properties: p, geometry: f.geometry }; }) });
+      const dom = {}; if (l._dom) fmap.forEach(([a, b]) => { const k = Object.keys(l._dom).find(x => x.toLowerCase() === String(a).toLowerCase()); if (k) dom[b] = l._dom[k]; });
+      const mk = (fm, feats) => ({ name: gdbName(l.name + (fams.length > 1 && fm !== 'None' ? '_' + FAM_AR[fm] : ''), usedL, 'L'), color: l.color, types, dom, fields: fmap.map(x => x[1]), features: feats.map(f => { const p = {}; fmap.forEach(([a, b]) => { if (f.properties && a in f.properties) p[b] = f.properties[a]; }); return { properties: p, geometry: f.geometry }; }) });
       if (!fams.length) { const o2 = mk('None', groups.None || []); const GTH = { point: 'POINT', line: 'MULTILINESTRING', polygon: 'MULTIPOLYGON' }; if (!o2.features.length && GTH[l.kind]) o2.gt = GTH[l.kind]; out.push(o2); }
       fams.forEach(fm => out.push(mk(fm, groups[fm])));
     }
@@ -3537,7 +3553,7 @@ return ret;
     it(l.visible ? '◌ إخفاء' : '👁 إظهار', () => { setVis(l, !l.visible); renderLayers(); });
     if (l.leaf) it(l.noSelect ? '🔓 افتح السيليكت للطبقة' : '🔒 اقفل السيليكت للطبقة', () => setSelectable(l, !!l.noSelect));
     it('☰ جدول البيانات', () => openTable(l, true));
-    if (l.leaf && (l.kind === 'line' || l.kind === 'point') && GV.recalcLayers) it('🔄 حدّث الحقول المحسوبة', () => { const n = GV.recalcLayers([l]); rebuild(l); dirty(); toast(n ? 'اتحدّث ' + n + ' قيمة (إحداثيات، طول، مناسيب من النقط، عمق، ميل)' : 'كل الحقول المحسوبة مظبوطة'); });
+    if (l.leaf && (l.kind === 'line' || l.kind === 'point') && GV.recalcLayers) it('🔄 حدّث الحقول المحسوبة', () => { const bef = l.features.map(f => Object.assign({}, f.properties || {})); const n = GV.recalcLayers([l]); rebuild(l); dirty(); if (n && GV.editSample) { const ch = []; l.features.forEach((f, i) => { if (Object.keys(f.properties || {}).some(k => String(f.properties[k]) !== String(bef[i][k]))) ch.push({ l, f, before: bef[i] }); }); GV.editSample('الحقول المحسوبة — ' + l.name, ch, () => { l.features.forEach((f, i) => { f.properties = bef[i]; }); rebuild(l); return ch.length; }); } toast(n ? 'اتحدّث ' + n + ' قيمة (إحداثيات، طول، مناسيب من النقط، عمق، ميل)' : 'كل الحقول المحسوبة مظبوطة'); });
     if (l.leaf) it('🎨 تلوين حسب حقل', () => openStyle(l, true));
     m.appendChild(el('div', 'ctx-sep'));
     it('⤒ ترسم فوق الكل', () => moveLayer(l, 'top')); it('▲ لفوق', () => moveLayer(l, 'up')); it('▼ لتحت', () => moveLayer(l, 'down')); it('⤓ ترسم تحت الكل', () => moveLayer(l, 'bottom'));
@@ -4224,6 +4240,9 @@ return ret;
   }
   async function toGDB(layers, epsg, wkt, base, multi) {
     if (!epsg && !wkt) throw new Error('اختار نظام إحداثيات للتصدير (الـ GDB لازم يكون ليه نظام).');
+    // coded-value / range domains go into the GDB too (own GDB domains, a template GDB's, and the new classes added in QC)
+    layers.forEach(l => { const D = GV.domInfoOf ? GV.domInfoOf(l) : null; l._dom = null; if (!D || !D.domains) return; const defs = D.domainDefs || {}; const m = {};
+      Object.keys(D.domains).forEach(f => { const dd = defs[D.domains[f]]; if (dd) m[f] = dd; }); if (Object.keys(m).length) l._dom = m; });
     const P = Writers.prepGDB(layers);
     const SQL = await initSqlJs({});
     const gp = await Writers.gpkg(P, epsg, wkt, SQL);
@@ -4243,7 +4262,7 @@ return ret;
     if (multi) { const raw = []; z.forEach((path, f) => raw.push({ name: 'gdb/' + path, f })); for (const r of raw) r.data = await r.f.async('uint8array'); return [{ name: 'gdb', raw }]; }
     return [{ name: gname + '.gdb.zip', data: await z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }), zipped: true }];
   }
-  GV.getGdal = getGdal;
+  GV.getGdal = getGdal; GV.toGDB = toGDB;
 
   $('#btnExport').addEventListener('click', () => openExport());
   $('#expGo').addEventListener('click', doExport);
@@ -4911,7 +4930,7 @@ return ret;
   const F = (props, re) => props ? Object.keys(props).find(k => re.test(k)) : null;
   const RE = {
     dia: /^(diam|diameter|dia|dn|nom_?dia|pipe_?dia|size|pipesize|قطر|القطر)$/i, mat: /^(material|mat|pipe_?mat|المادة|ماده)$/i,
-    us: /^(us_?il|us_?inv|up_?inv|upstream_?inv(ert)?|inv_?up|start_?inv|from_?inv)/i, ds: /^(ds_?il|ds_?inv|dn_?inv|down_?inv|downstream_?inv(ert)?|inv_?dn|end_?inv|to_?inv)/i,
+    us: /^(us_?il|us_?inv|up_?inv|upstream_?inv(ert)?|inv_?up|start_?inv|from_?inv|start_?pipe_?elevation|startpipeelevation)/i, ds: /^(ds_?il|ds_?inv|dn_?inv|down_?inv|downstream_?inv(ert)?|inv_?dn|end_?inv|to_?inv|end_?pipe_?elevation|endpipeelevation)/i,
     cover: /^(cover|cover_?level|cl|rim|rim_?elev|ground|gl|ngl|ground_?level)$/i, inv: /^(invert|inv|il|invert_?level|bottom|منسوب_?القاع)$/i, depth: /^(depth|mh_?depth|العمق)$/i,
     vtype: /^(valve_?type|vtype|type|subtype|assettype|نوع)$/i, status: /^(status|valve_?status|normal_?status|حالة)$/i, volt: /^(voltage|volt|kv)$/i, csize: /^(cable_?size|size|section|mm2|cross_?section)$/i,
     height: /^(pole_?height|height|ht|الارتفاع)$/i, watt: /^(wattage|watt|lamp_?watt|power|w)$/i, ptype: /^(pole_?type|type|النوع)$/i, press: /^(pressure|press|pn|pressure_?class)$/i, len: /^(length|len|shape_?length|الطول)$/i
@@ -5437,7 +5456,7 @@ return ret;
   }
   // convert every value that is written as text but matches a domain / subtype entry into its code (undo kept)
   GV.domainConvert = layers => { let n = 0; const undo = []; (layers || GV.sources.flatMap(s => s.layers)).forEach(l => { const D = domInfo(l); if (!D) return; const defs = D.domainDefs || {}; const jobs = []; if (D.subtypes) jobs.push({ field: D.subtypes.field, list: D.subtypes.list }); Object.keys(D.domains || {}).forEach(f => { const dd = defs[D.domains[f]]; if (dd && dd.codes) jobs.push({ field: f, list: dd.codes }); });
-      jobs.forEach(j => l.features.forEach(f => { const pr = f.properties || {}; const fk = Object.keys(pr).find(k => k.toLowerCase() === j.field.toLowerCase()); if (!fk) return; const v = pr[fk]; if (v == null || String(v).trim() === '') return; const m = domMatch(j.list, v); if (m && !m.ok) { undo.push({ pr, fk, v }); pr[fk] = m.code; n++; } })); });
+      jobs.forEach(j => l.features.forEach(f => { const pr = f.properties || {}; const fk = Object.keys(pr).find(k => k.toLowerCase() === j.field.toLowerCase()); if (!fk) return; const v = pr[fk]; if (v == null || String(v).trim() === '') return; const m = domMatch(j.list, v); if (m && !m.ok) { undo.push({ l, f, pr, fk, v }); pr[fk] = m.code; n++; } })); });
     GV.domainUndo = undo; if (GV.onDirty) GV.onDirty(); return n; };
   // values that match nothing in the domain (a district name, a hand-typed diameter…) become NEW entries of that domain,
   // and the features get the new code. New entries are logged (GV.domainAdded) so they can be added to the delivery GDB.
@@ -5454,8 +5473,10 @@ return ret;
             if (sameAsName && (txt.match(/\d+(?:\.\d+)?/) || [])[0]) code = +(txt.match(/\d+(?:\.\d+)?/) || [])[0];
             else if (numCodes) code = Math.max(0, ...j.list.map(c => +c.code)) + 1; else code = txt;
             const name = sameAsName ? String(code) : txt; j.list.push({ code, name }); added.push({ layer: l.name, field: fk, domain: j.dn, code, name }); m = { code }; }
-          undo.push({ pr, fk, v }); pr[fk] = m.code; n++; }); }); });
+          undo.push({ l, f, pr, fk, v }); pr[fk] = m.code; n++; }); }); });
     GV.domainUndo = undo; if (GV.onDirty) GV.onDirty(); return n; };
+  GV.domInfoOf = domInfo;
+  GV.domainSample = title => GV.editSample && GV.editSample(title, (GV.domainUndo || []).map(u => ({ l: u.l, f: u.f, before: { [u.fk]: u.v }, after: { [u.fk]: u.pr[u.fk] } })), () => GV.domainUndoFn());
   GV.domainUndoFn = () => { (GV.domainUndo || []).forEach(u => { u.pr[u.fk] = u.v; }); const n = (GV.domainUndo || []).length; GV.domainUndo = null; return n; };
   function attrChecks(l, add, proj, KX, KY) {
     const fields = GV.fieldsOf(l).filter(k => !/^(objectid|fid|oid|shape|shape_length|shape_area|globalid|Text|Rotation|Height|Entity|Color|Layer|Block)$/i.test(k));
@@ -5784,8 +5805,9 @@ return ret;
         const tb = el('button', 'chip', 'الجدول'); tb.onclick = () => { if (GV.qcLayer) { GV.openTable(GV.qcLayer); setTimeout(() => { $('#tblSearch').value = p.type; $('#tblSearch').dispatchEvent(new Event('input')); }, 50); } };
         const FIXMAP = [[/متكرر/, 'dup'], [/طوله صفر|طول صفر/, 'zero'], [/سبايك|رؤوس مكررة|vertex مكرر/, 'vtx'], [/Multipart/i, 'multi'], [/فجوة|طرف خط (مش|مو) متوصل|معلق|undershoot|overshoot|dangl/i, 'snapEnd'], [/قريبة من الخط|مش عليه|بعيدة عن الخط/, 'snapPt'], [/من غير vertex|مش على vertex/, 'vertex'], [/مش مقسوم|مش متقسم|من غير تقسيم|الخط عدّى على/, 'splitDev'], [/تقاطع/, 'split'], [/مسافات زيادة|كتابة مختلفة|توحيد/, 'attr'], [/US_MH|DS_MH|SLOPE|DEPTH|فاضي.*محسوب|ACTUALLENGTH/, 'derive']];
         const fk = (FIXMAP.find(m => m[0].test(p.type + ' ' + p.title)) || [])[1];
-        if (/مش موجودة في الدومين|مش من الـ Subtypes/.test(p.type)) { const nb = el('button', 'chip ok', '➕ ضيف القيم دي للدومين كتصنيفات جديدة وحوّلها لأكواد'); nb.title = 'كل قيمة مكتوبة ومش موجودة (زي اسم حي أو قطر) بتتضاف للدومين بكود جديد، وتقدر تتراجع'; nb.onclick = () => { const before = (GV.domainAdded || []).length; const n = GV.domainAddNew(); const nw = (GV.domainAdded || []).slice(before); r.classList.add('gone'); GV.toast('اتضاف ' + nw.length + ' تصنيف جديد واتحولت ' + n + ' قيمة لكود — هتلاقي القايمة في ملف Excel الداتا الوصفية', 5000); }; acts.appendChild(nb); }
-        if (/بدل كود/.test(p.type)) { const cb = el('button', 'chip ok', '🛠 حوّل كل النصوص لأكواد (الدومين / Subtype)'); cb.onclick = () => { const n = GV.domainConvert(); r.classList.add('gone'); GV.toast('اتحولت ' + n + ' قيمة لكود — اعمل فحص تاني عشان تتأكد', 5000); }; acts.appendChild(cb); }
+        if (/مش موجودة في الدومين|مش من الـ Subtypes/.test(p.type)) { const nb = el('button', 'chip ok', '➕ ضيف القيم دي للدومين كتصنيفات جديدة وحوّلها لأكواد'); nb.title = 'كل قيمة مكتوبة ومش موجودة (زي اسم حي أو قطر) بتتضاف للدومين بكود جديد، وتقدر تتراجع'; nb.onclick = () => { const before = (GV.domainAdded || []).length; const n = GV.domainAddNew(); const nw = (GV.domainAdded || []).slice(before); r.classList.add('gone'); GV.toast('اتضاف ' + nw.length + ' تصنيف جديد واتحولت ' + n + ' قيمة لكود — هتلاقي القايمة في ملف Excel الداتا الوصفية', 5000); GV.domainSample('تصنيفات دومين جديدة'); }; acts.appendChild(nb); }
+        if (/ميل عكسي|اتجاه السريان|سريان من اتجاهين|مش بيوصل لمخرج/.test(p.type) && GV.flipByLevels) { const fb = el('button', 'chip ok', '🔁 اقلب اتجاه الخطوط اللي مناسيبها بتقول إنها معكوسة'); fb.title = 'كل ماسورة جاذبية منسوب أولها أوطى من آخرها بتتقلب (الرسم + حقول البداية والنهاية)، وتقدر تتراجع'; fb.onclick = () => { const n = GV.flipByLevels(); r.classList.add('gone'); GV.toast(n ? 'اتقلب ' + n + ' خط — اعمل فحص تاني عشان تتأكد إن الشبكة ماشية في اتجاه واحد' : 'مفيش خطوط مناسيبها بتقول إنها معكوسة — الخطوط دي محتاجة تتراجع بالعين', 5000); if (n && GV.editSample) GV.editSample('قلب اتجاه السريان', GV.flipUndo.map(u => ({ l: u.l, f: u.f, before: u.p, note: 'اتقلب اتجاه الرسم' })), () => GV.flipUndoFn()); }; acts.appendChild(fb); }
+        if (/بدل كود/.test(p.type)) { const cb = el('button', 'chip ok', '🛠 حوّل كل النصوص لأكواد (الدومين / Subtype)'); cb.onclick = () => { const n = GV.domainConvert(); r.classList.add('gone'); GV.toast('اتحولت ' + n + ' قيمة لكود — اعمل فحص تاني عشان تتأكد', 5000); GV.domainSample('تحويل النصوص لأكواد'); }; acts.appendChild(cb); }
         if (fk && GV.openFix) { const fxb = el('button', 'chip ok', '🛠 صلّح النوع ده كله (' + p.n + ')'); fxb.title = 'نفس الحل بيتطبق على كل الأماكن اللي من النوع ده، وتقدر تتراجع'; fxb.onclick = () => { r.classList.add('gone'); GV.openFix({ only: [fk] }); }; acts.appendChild(fxb); }
         const ig = el('button', 'chip', '✓ تمام — عدّي النوع ده كله'); ig.onclick = () => { r.classList.add('gone'); if (GV.qcLayer) GV.qcLayer.features.forEach(f => { if (f.properties['المشكلة'] === p.type && (!p.layer || f.properties['الطبقة'] === p.layer)) f.properties['الحالة'] = 'مقبول'; }); RULES.push({ id: Date.now().toString(36), kind: 'ignore', layer: p.layer || '*', issue: p.type, from: 'تجاهل' }); saveRules(); answer({ items: [] , rule: null, key: '' }, false); };
         if (p.n > 1) { const rv = el('button', 'chip', '👁 راجع عينة (' + Math.min(8, p.n) + ')'); rv.title = 'شوف أمثلة متفرقة واحد ورا التاني، وبعدها خد قرار واحد للنوع كله'; rv.onclick = () => review(p, () => { const fb = [...acts.querySelectorAll('button')].find(b => /صلّح النوع/.test(b.textContent)); if (fb) fb.click(); }, () => ig.onclick(), !!fk); acts.appendChild(rv); }
@@ -7081,6 +7103,7 @@ return ret;
       $('#busy').classList.remove('show');
       if (ctx.cad) { cadDone(r); return; }
       GV.toast(r.log.length.toLocaleString('en') + ' تعديل اتعمل · بعيد الفحص…', 3500);
+      if (GV.editSample && r.log.length) { const NM = GV.FIX_NAMES || {}; setTimeout(() => GV.editSample('الحل التلقائي', r.log.map(e => ({ l: { name: e.layer }, f: null, note: (NM[e.op] || e.op) + (e.detail ? ' — ' + e.detail : ''), ll: e.ll })), GV.fixUndoFn ? () => GV.fixUndoFn() : null), 1500); }
       GV.fixBefore = before;
       await GV.runQC();
     } catch (e) { GV.showMsg('حصلت مشكلة: ' + (e.message || e)); console.error(e); }
@@ -8006,7 +8029,7 @@ return ret;
     pend.forEach((p, i) => {
       const r = el('div', 'rule'); const t = p.t === 'edit' ? ('تعديل ' + p.n + ' عنصر في ' + p.layer + ' · لو: ' + p.where + ' · ' + Object.keys(p.set).map(k => k + ' = ' + p.set[k]).join(' · ')) : p.t === 'rule' ? (p.r.kind + ' · ' + (p.r.layer || '*') + (p.r.field && p.r.field !== '*' ? ' · ' + p.r.field : '') + (p.r.value ? ' · "' + p.r.value + '"' : '') + (p.r.min != null || p.r.max != null ? ' · ' + (p.r.min ?? '') + '..' + (p.r.max ?? '') : '') + (p.r.values ? ' · {' + p.r.values + '}' : '')) : ('تصنيف ' + p.layer + ' ← ' + p.category);
       const sp = el('span'); sp.append(el('b', 'mono', t), el('br'), el('small', 'muted', p.why || '')); r.appendChild(sp);
-      const ok = el('button', 'chip ok', 'موافق'); ok.onclick = () => { if (p.t === 'edit') { const undo = []; let n = 0; p.l.features.forEach((f, i) => { const pr = f.properties || (f.properties = {}); let hit = false; try { hit = !!p.wf(pr, i); } catch (e) { } if (!hit) return; undo.push({ f, old: Object.assign({}, pr) }); const nv = {}; p.sf.forEach(([k, fn]) => { try { nv[k] = fn(pr, i); } catch (e) { } }); Object.assign(pr, nv); if (GV.recalcDerived) { try { GV.recalcDerived(p.l, f, { quiet: true }); } catch (e) { } } n++; }); GV.aiUndo = { undo, layer: p.l }; if (GV.onDirty) GV.onDirty(); GV.rebuild && p.l.leaf && GV.rebuild(p.l); GV.toast('اتعدل ' + n + ' عنصر — تقدر تتراجع من زرار ↶ في شاشة Claude'); pend.splice(i, 1); drawPend(); const u = el('button', 'chip', '↶ تراجع عن آخر تعديل'); u.onclick = () => { (GV.aiUndo.undo || []).forEach(x => { x.f.properties = x.old; }); GV.aiUndo = null; u.remove(); GV.toast('اتراجعت'); }; $('#aiPend').appendChild(u); return; } if (p.t === 'rule') { const rr = Object.assign({}, p.r); if (rr.values) rr.values = String(rr.values).split(/[|,]/).map(s => s.trim()).filter(Boolean); GV.qcAddRule(rr); GV.toast('اتضافت القاعدة — هتتطبق في الفحص الجاي'); } else { GV.orgOverrides[p.layer] = p.category; GV.toast('اتسجل — هيظهر في "تنظيم الكاد"'); } pend.splice(i, 1); drawPend(); };
+      const ok = el('button', 'chip ok', 'موافق'); ok.onclick = () => { if (p.t === 'edit') { const undo = []; let n = 0; p.l.features.forEach((f, i) => { const pr = f.properties || (f.properties = {}); let hit = false; try { hit = !!p.wf(pr, i); } catch (e) { } if (!hit) return; undo.push({ f, old: Object.assign({}, pr) }); const nv = {}; p.sf.forEach(([k, fn]) => { try { nv[k] = fn(pr, i); } catch (e) { } }); Object.assign(pr, nv); if (GV.recalcDerived) { try { GV.recalcDerived(p.l, f, { quiet: true }); } catch (e) { } } n++; }); GV.aiUndo = { undo, layer: p.l }; if (GV.editSample && undo.length) GV.editSample('تعديل Claude على ' + p.l.name, undo.map(x => ({ l: p.l, f: x.f, before: x.old })), () => { undo.forEach(x => { x.f.properties = x.old; }); GV.rebuild && GV.rebuild(p.l); return undo.length; }); if (GV.onDirty) GV.onDirty(); GV.rebuild && p.l.leaf && GV.rebuild(p.l); GV.toast('اتعدل ' + n + ' عنصر — تقدر تتراجع من زرار ↶ في شاشة Claude'); pend.splice(i, 1); drawPend(); const u = el('button', 'chip', '↶ تراجع عن آخر تعديل'); u.onclick = () => { (GV.aiUndo.undo || []).forEach(x => { x.f.properties = x.old; }); GV.aiUndo = null; u.remove(); GV.toast('اتراجعت'); }; $('#aiPend').appendChild(u); return; } if (p.t === 'rule') { const rr = Object.assign({}, p.r); if (rr.values) rr.values = String(rr.values).split(/[|,]/).map(s => s.trim()).filter(Boolean); GV.qcAddRule(rr); GV.toast('اتضافت القاعدة — هتتطبق في الفحص الجاي'); } else { GV.orgOverrides[p.layer] = p.category; GV.toast('اتسجل — هيظهر في "تنظيم الكاد"'); } pend.splice(i, 1); drawPend(); };
       const no = el('button', 'chip', 'لأ'); no.onclick = () => { pend.splice(i, 1); drawPend(); };
       r.append(ok, no); box.appendChild(r);
     });
@@ -8922,7 +8945,60 @@ return ret;
   }
   // whole layers on demand
   function recalcLayers(ls) { let n = 0; ls.forEach(l => l.features.forEach(f => { const log = []; n += (l.kind === 'point' ? pointPart(l, f, log) : l.kind === 'line' ? linePart(l, f, log) : 0); })); return n; }
+  // flip a gravity line so it is drawn in the flow direction: geometry reversed, start/end fields swapped
+  const PAIRS = [['sg', 'eg'], ['si', 'ei'], ['sx', 'ex'], ['sy', 'ey'], ['sd', 'ed']];
+  const MHP = [/^(us_?mh(_?id|_?no)?|from_?mh|start_?mh|upstream_?mh)$/i, /^(ds_?mh(_?id|_?no)?|to_?mh|end_?mh|downstream_?mh)$/i];
+  function flipOne(f) { const rev = g => g.type === 'LineString' ? { type: g.type, coordinates: g.coordinates.slice().reverse() } : g.type === 'MultiLineString' ? { type: g.type, coordinates: g.coordinates.slice().reverse().map(c => c.slice().reverse()) } : g;
+    f.geometry = rev(f.geometry); if (f.wgs) f.wgs = { type: 'Feature', properties: {}, geometry: rev(f.wgs.geometry) };
+    const p = f.properties || {}; PAIRS.concat([[0, 1]]).forEach(([a, b]) => { const ka = a === 0 ? keyOf(p, MHP[0]) : keyOf(p, RE[a]), kb = b === 1 ? keyOf(p, MHP[1]) : keyOf(p, RE[b]); if (ka && kb) { const t = p[ka]; p[ka] = p[kb]; p[kb] = t; } });
+    const si = num(p[keyOf(p, RE.si)]), ei = num(p[keyOf(p, RE.ei)]), L = lenOf(f); if (si != null && ei != null && L) setV(p, RE.slope, (si - ei) / L * 100); }
+  // every gravity line whose own levels say it is drawn uphill (start IL below end IL) is flipped; undo kept
+  GV.flipByLevels = ls => { const undo = []; let n = 0; (ls || layers().map(x => x.l)).forEach(l => { if (l.kind !== 'line') return; l.features.forEach(f => { const p = f.properties || {}; const si = num(p[keyOf(p, RE.si)]), ei = num(p[keyOf(p, RE.ei)]); if (si == null || ei == null || si >= ei) return; undo.push({ l, f, g: JSON.parse(JSON.stringify(f.geometry)), w: f.wgs ? JSON.parse(JSON.stringify(f.wgs)) : null, p: Object.assign({}, p) }); flipOne(f); n++; }); if (n && GV.rebuild) GV.rebuild(l); });
+    GV.flipUndo = undo; if (n && GV.onDirty) GV.onDirty(); return n; };
+  GV.flipUndoFn = () => { (GV.flipUndo || []).forEach(u => { u.f.geometry = u.g; u.f.wgs = u.w; u.f.properties = u.p; }); const n = (GV.flipUndo || []).length; GV.flipUndo = null; GV.sources.forEach(s => s.layers.forEach(l => GV.rebuild && l.leaf && GV.rebuild(l))); return n; };
+  GV.flipLine = flipOne;
   GV.recalcDerived = recalc; GV.recalcLayers = recalcLayers; GV.deriveRE = RE;
+})();
+
+</script>
+<script>
+/* After every bulk edit the app shows a SAMPLE of what changed (Ahmed: "always give me a sample of everything you edited
+   so we're sure we work right"): up to 8 cases spread over the whole change, each zoomed on the map with its fields
+   before → after, then "looks right" or "undo all". */
+(function () {
+  'use strict';
+  const GV = window.GV; const { el } = GV;
+  const idOf = f => { const p = (f && f.properties) || {}; for (const k of ['OBJECTID', 'objectid', 'FID', 'fid', 'OID']) if (p[k] != null) return p[k]; return ''; };
+  const show = v => v == null || v === '' ? '—' : String(v).length > 40 ? String(v).slice(0, 40) + '…' : String(v);
+  // items: [{ l, f, before: {..props}, after?: {..props}, note?, ll?: [lon,lat] }]
+  GV.editSample = (title, items, undoFn) => {
+    items = (items || []).filter(Boolean); if (!items.length) return;
+    const n = Math.min(8, items.length); const smp = []; for (let k = 0; k < n; k++) smp.push(items[Math.floor(k * items.length / n)]);
+    let k = 0; let w = document.getElementById('editSample'); if (w) w.remove(); w = el('div', 'qc-rev'); w.id = 'editSample';
+    const head = el('div', 'qc-rev-h'); head.appendChild(el('b', null, '🔍 عينة للمراجعة — ' + title)); const cnt = el('span', 'muted small'); const x = el('button', 'icon-btn', '✕'); x.onclick = () => w.remove(); head.append(cnt, x);
+    const body = el('div', 'small'); body.style.maxHeight = '38vh'; body.style.overflow = 'auto';
+    const draw = () => {
+      const it = smp[k]; cnt.textContent = 'مثال ' + (k + 1) + ' من ' + n + ' (من ' + items.length.toLocaleString('en') + ' تعديل)';
+      body.textContent = ''; body.appendChild(el('div', null, (it.l ? it.l.name : '') + (idOf(it.f) !== '' ? ' · OBJECTID ' + idOf(it.f) : '') + (it.note ? ' · ' + it.note : '')));
+      const a = it.after || (it.f && it.f.properties) || {}; const b = it.before || {};
+      const keys = Object.keys(Object.assign({}, b, a)).filter(kk => String(b[kk]) !== String(a[kk]));
+      if (keys.length) { const t = el('table', 'smp-t'); const hr = el('tr'); ['الحقل', 'قبل', 'بعد'].forEach(h => hr.appendChild(el('th', null, h))); t.appendChild(hr);
+        keys.slice(0, 20).forEach(kk => { const r = el('tr'); r.append(el('td', null, kk), el('td', 'old', show(b[kk])), el('td', 'new', show(a[kk]))); t.appendChild(r); }); body.appendChild(t); }
+      else if (!it.note) body.appendChild(el('div', 'muted', 'اتغيّر الرسم (الشكل/المكان) من غير ما الحقول تتغير'));
+      let ll = it.ll ? L.latLng(it.ll[1], it.ll[0]) : null; if (!ll && it.f && it.f.wgs) { try { ll = L.geoJSON(it.f.wgs).getBounds().getCenter(); } catch (e) { } }
+      if (ll) { GV.map.setView(ll, Math.max(GV.map.getZoom(), 19)); GV.markSel && GV.markSel(ll.lat, ll.lng); }
+    };
+    const nav = el('div', 'fc-acts');
+    const pv = el('button', 'chip', '◀ اللي قبله'); pv.onclick = () => { k = (k + n - 1) % n; draw(); };
+    const nx = el('button', 'chip', 'اللي بعده ▶'); nx.onclick = () => { k = (k + 1) % n; draw(); };
+    const ok = el('button', 'chip ok', '✓ تمام كده'); ok.onclick = () => w.remove();
+    nav.append(pv, nx, ok);
+    if (undoFn) { const u = el('button', 'chip danger', '↶ تراجع عن الكل'); u.onclick = () => { w.remove(); const r = undoFn(); GV.toast('اتراجعت' + (typeof r === 'number' ? ' عن ' + r + ' تعديل' : ''), 3000); }; nav.appendChild(u); }
+    w.append(head, body, nav); document.body.appendChild(w); draw();
+  };
+  const st = document.createElement('style');
+  st.textContent = '.smp-t{width:100%;border-collapse:collapse;margin-top:6px}.smp-t th,.smp-t td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:start}.smp-t .old{color:var(--warn);text-decoration:line-through}.smp-t .new{color:#40c057;font-weight:600}';
+  document.head.appendChild(st);
 })();
 
 </script>
@@ -8980,6 +9056,9 @@ return ret;
     { id: 'ST_SPACING', nets: ['storm'], sev: 'warn', t: 'المسافة بين غرفتين أكبر من المسموح (تصريف أمطار)', d: '< 1500 مم: 100 م · ≥ 1500 مم: 250 م', src: 'jed' },
     { id: 'G_MAINJUNC', nets: ['storm'], sev: 'warn', t: 'خطين رئيسيين بيتلاقوا من غير غرفة', d: 'التلاقي بين خطين رئيسيين لازم يبقى في غرفة. في الصرف التلاقي على واي مسموح (قرار أحمد) فالقاعدة دي للأمطار بس', src: 'gulfS' },
     { id: 'S_MHJUNC', nets: ['sewer'], sev: 'err', t: 'مواسير جاية من شوارع مختلفة بتتقابل من غير منهول', d: 'نفس الشارع بين منهولين ومتوصل بواي = عادي. لو 3 مواسير أو أكتر، أو ماسورتين بزاوية أكبر من 30° أو أسامي شوارع مختلفة = لازم منهول (قرار أحمد)', src: 'our' },
+    { id: 'G_FLOWLOOP', nets: ['sewer', 'storm'], sev: 'err', t: 'اتجاه السريان بيلف في دايرة', d: 'مواسير الجاذبية لازم تمشي في اتجاه واحد لحد المخرج — الدايرة معناها إن خط أو أكتر مرسوم بالعكس', src: 'our' },
+    { id: 'G_FLOWHEAD', nets: ['sewer', 'storm'], sev: 'err', t: 'سريان من اتجاهين بيتقابل ومفيش خروج', d: 'ماسورتين أو أكتر داخلين على نقطة ومفيش ولا ماسورة خارجة منها (ومش مخرج/محطة رفع) — غالبًا واحدة منهم معكوسة', src: 'our' },
+    { id: 'G_FLOWOUT', nets: ['sewer', 'storm'], sev: 'warn', t: 'السريان مش بيوصل لمخرج الشبكة', d: 'لو مشيت مع اتجاه السريان من الماسورة دي بتقف عند نهاية تانية غير المخرج الرئيسي للشبكة', src: 'our' },
     { id: 'G_DIACHG', nets: ['sewer', 'storm'], sev: 'warn', t: 'تغيير قطر في نص الخط من غير غرفة', d: 'خطين ورا بعض بقطرين مختلفين ومفيش غرفة بينهم', src: 'gulfS' },
     { id: 'ST_MINDIA', def: false, nets: ['storm'], sev: 'info', t: 'قطر خط الأمطار أقل من الحد الأدنى', d: 'رئيسي < 600 مم أو فرعي < 450 مم (دليل جدة) — مقفولة: المشروع مش ماشي على دليل جدة', src: 'jed' },
     { id: 'W_HYDVALVE', nets: ['water'], sev: 'warn', t: 'فرعة حنفية الحريق مفيهاش محبس عزل', d: 'الحنفية بتتوصل بفرعة عليها محبس (Hydrant with service and valve)', src: 'esriW' },
@@ -9023,6 +9102,27 @@ return ret;
           if (on('G_DIACHG') && k === m.c.length - 1 || on('G_DIACHG') && k === 1) { const oth = endsAt(c, tol, ln => ln.el === 'MAIN', m); if (oth.length === 1) { const d2 = diaOf(oth[0].ln.l, oth[0].ln.f); if (d && d2 && d !== d2) R('G_DIACHG', m, d + ' ← ' + d2 + ' مم'); } }
         });
       });
+    }
+    // ---- one flow direction for gravity networks (Ahmed: the whole network must run one way) ----
+    if ((net === 'sewer' || net === 'storm') && (on('G_FLOWLOOP') || on('G_FLOWHEAD') || on('G_FLOWOUT'))) {
+      const grav = mains.filter(m => m.el === 'MAIN'); const KN = c => Math.round(c[0] / 0.5) + ',' + Math.round(c[1] / 0.5);
+      const nodes = new Map(); const node = c => { const k = KN(c); let o = nodes.get(k); if (!o) { o = { k, c, out: [], inn: [] }; nodes.set(k, o); } return o; };
+      grav.forEach(m => { const a = node(m.c[0]), b = node(m.c[m.c.length - 1]); a.out.push(m); b.inn.push(m); m._a = a; m._b = b; });
+      // a pipe can also end on another pipe's middle (WYE): treat that as flowing into the host pipe's end
+      grav.forEach(m => { if (m._b.out.length) return; const e = m.c[m.c.length - 1]; const host = lineNear(e, tol, ln => ln !== m && ln.el === 'MAIN' && Math.hypot(ln.c[0][0] - e[0], ln.c[0][1] - e[1]) > 0.5 && Math.hypot(ln.c[ln.c.length - 1][0] - e[0], ln.c[ln.c.length - 1][1] - e[1]) > 0.5); if (host && host.ln._b) m._b2 = host.ln._b; });
+      const isOutlet = c => !!ptNear(c, Math.max(tol, 0.5), p => /^(OUTF|LIFT|PUMP|STP|TRMT)/.test(p.el || ''));
+      // loops: DFS on node graph
+      if (on('G_FLOWLOOP')) { const st = new Map(); const rep = new Set();
+        const next = n => n.out.map(m => m._b2 || m._b);
+        const dfs = (n, path) => { st.set(n, 1); for (const m of n.out) { const t = m._b2 || m._b; const s2 = st.get(t); if (s2 === 1) { if (!rep.has(m)) { rep.add(m); R('G_FLOWLOOP', m, 'الماسورة دي بتقفل دايرة في اتجاه السريان'); } } else if (!s2) dfs(t); } st.set(n, 2); };
+        try { nodes.forEach(n => { if (!st.get(n)) dfs(n); }); } catch (e) { /* very deep networks: skip */ } }
+      if (on('G_FLOWHEAD')) nodes.forEach(n => { if (n.inn.length >= 2 && !n.out.length && !n.inn.some(m => m._b2) && !isOutlet(n.c)) R('G_FLOWHEAD', n.inn[0], n.inn.length + ' مواسير داخلة ومفيش خروج'); });
+      if (on('G_FLOWOUT')) { // terminal sinks per connected network; the biggest catchment is the outlet, others are flagged
+        const sinkOf = new Map(); const follow = n => { const seen = new Set(); let cur = n; while (cur && cur.out.length && !seen.has(cur)) { seen.add(cur); const m = cur.out[0]; cur = m._b2 || m._b; } return cur; };
+        const cnt = new Map(); grav.forEach(m => { const sk = follow(m._b2 || m._b); sinkOf.set(m, sk); cnt.set(sk, (cnt.get(sk) || 0) + 1); });
+        const main = [...cnt.entries()].sort((a, b) => b[1] - a[1]); const big = main.length ? main[0][1] : 0;
+        main.slice(1).forEach(([sk, n]) => { if (isOutlet(sk.c) || n >= big * 0.25) return; const first = grav.find(m => sinkOf.get(m) === sk); if (first) R('G_FLOWOUT', first, n + ' ماسورة بتصب في نهاية جانبية بدل المخرج الرئيسي'); });
+      }
     }
     if (net === 'sewer' && on('S_MHJUNC')) {
       const SK = /^(street_?name|streetname|street|road_?name|اسم_?الشارع|الشارع)$/i;
