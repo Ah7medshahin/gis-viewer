@@ -30,7 +30,7 @@
 
   /* ================= export / convert ================= */
   const EXP_CRS = [['4326', 'WGS84 (درجات)'], ['32636', 'WGS84 / UTM 36N'], ['32637', 'WGS84 / UTM 37N'], ['32638', 'WGS84 / UTM 38N'], ['32639', 'WGS84 / UTM 39N'], ['32640', 'WGS84 / UTM 40N'], ['20437', 'Ain el Abd / UTM 37N'], ['20438', 'Ain el Abd / UTM 38N'], ['20439', 'Ain el Abd / UTM 39N'], ['32635', 'WGS84 / UTM 35N']];
-  const FMTS = [['gdb', 'File Geodatabase (.gdb)', 'ArcGIS'], ['gpkg', 'GeoPackage', 'ArcGIS / QGIS'], ['shp', 'Shapefile', ''], ['dxf', 'كاد (DXF → DWG)', 'AutoCAD'], ['kml', 'KML', 'Google Earth'], ['kmz', 'KMZ', 'Google Earth'], ['geojson', 'GeoJSON', ''], ['csv', 'CSV / Excel', '']];
+  const FMTS = [['gdb', 'File Geodatabase (.gdb)', 'ArcGIS'], ['gpkg', 'GeoPackage', 'ArcGIS / QGIS'], ['shp', 'Shapefile', ''], ['dxf', 'كاد (DXF → DWG)', 'AutoCAD'], ['kml', 'KML', 'Google Earth'], ['kmz', 'KMZ', 'Google Earth'], ['geojson', 'GeoJSON', ''], ['csv', 'CSV', ''], ['xlsx', 'Excel بالإحداثيات (.xlsx)', 'شيت لكل طبقة'], ['landxml', 'LandXML شبكة مواسير', 'Civil 3D'], ['tab', 'MapInfo (.tab)', 'MapInfo'], ['dgn', 'MicroStation (.dgn)', 'Bentley'], ['gml', 'GML', ''], ['sqlite', 'SQLite', ''], ['gpx', 'GPX (نقاط)', 'GPS']];
   const CAD_STD = [['*STD', '★ ستاندرد الكاد (NCS + ألوان المرافق العالمية + سُمك حسب القطر + أنوتيشن هندسي)'], ['', '— زي اسم طبقة GIS —'], ['C-WATR', 'مياه C-WATR'], ['C-SSWR', 'صرف صحي C-SSWR'], ['C-STRM', 'أمطار C-STRM'], ['E-POWR', 'كهرباء E-POWR'], ['E-LITE', 'إنارة E-LITE'], ['C-COMM', 'اتصالات C-COMM'], ['C-NGAS', 'غاز C-NGAS'], ['L-IRRG', 'ري L-IRRG'], ['C-ROAD', 'طرق C-ROAD'], ['C-TOPO', 'مساحة C-TOPO']];
   let expPre = null;
   function allLayers() { return GV.sources.flatMap(s => s.layers.filter(l => l.features.length || l.schemaFields).map(l => ({ l, s }))); }
@@ -245,7 +245,7 @@
       const files = []; const multi = fmts.length > 1; const pre = f => multi ? f + '/' : '';
       for (const fmt of fmts) {
         $('#busyText').textContent = 'بحوّل لـ ' + (FMTS.find(x => x[0] === fmt) || [0, fmt])[1] + '…'; await new Promise(r => setTimeout(r, 20));
-        const g0 = get(fmt === 'kml' || fmt === 'kmz' ? '4326' : crsSel); const { epsg, wkt } = g0; const out = (fmt === 'gdb' || fmt === 'gpkg') ? g0.out : g0.out.filter(l => l.features.length);
+        const g0 = get(fmt === 'kml' || fmt === 'kmz' || fmt === 'gpx' ? '4326' : crsSel); const { epsg, wkt } = g0; const out = (fmt === 'gdb' || fmt === 'gpkg') ? g0.out : g0.out.filter(l => l.features.length);
         if (fmt === 'geojson') out.forEach(l => files.push({ name: pre(fmt) + Writers.safeName(l.name) + '.geojson', data: Writers.geojson(l, epsg) }));
         if (fmt === 'csv') out.forEach(l => files.push({ name: pre(fmt) + Writers.safeName(l.name) + '.csv', data: Writers.csv(l) }));
         if (fmt === 'shp') out.forEach(l => Writers.shapefiles(l, wkt).forEach(f => files.push({ name: pre(fmt) + f.name, data: f.data })));
@@ -277,6 +277,8 @@
               if (parts.length) setTimeout(() => GV.showMsg ? GV.showMsg('ملاحظات الليبلات\n\n' + parts.join('\n\n')) : GV.toast(parts[0].split('\n')[0]), 900); } }
         }
         if (fmt === 'gpkg') { const SQL = await initSqlJs({}); files.push({ name: pre(fmt) + base + '.gpkg', data: await Writers.gpkg(out, epsg, wkt, SQL) }); }
+        if (['xlsx', 'tab', 'gml', 'sqlite', 'dgn', 'gpx'].includes(fmt)) { $('#busyText').textContent = 'بحمّل محرك GDAL…'; const src = fmt === 'gpx' ? out.filter(l => l.features.some(f => f.geometry && /Point/.test(f.geometry.type))).map(l => Object.assign({}, l, { features: l.features.filter(f => f.geometry && /Point/.test(f.geometry.type)) })) : out; if (!src.length) throw new Error('GPX محتاج طبقة نقاط'); (await toOGR(src, epsg, wkt, base, fmt, multi)).forEach(f => files.push(f)); }
+        if (fmt === 'landxml') { const x = GV.landXML ? GV.landXML(out, epsg) : null; if (!x) throw new Error('مفيش شبكة مواسير (خطوط + منهولات) في الطبقات المختارة'); files.push({ name: pre(fmt) + base + '_pipes.xml', data: x }); }
         if (fmt === 'gdb') { $('#busyText').textContent = 'بحمّل محرك GDAL…'; const g = await toGDB(out, epsg, wkt, base, multi); g.forEach(f => files.push({ name: f.name, data: f.data, raw: f.raw })); }
       }
       $('#busy').classList.remove('show');
@@ -341,7 +343,36 @@
     if (multi) { const raw = []; z.forEach((path, f) => raw.push({ name: 'gdb/' + path, f })); for (const r of raw) r.data = await r.f.async('uint8array'); return [{ name: 'gdb', raw }]; }
     return [{ name: gname + '.gdb.zip', data: await z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }), zipped: true }];
   }
-  GV.getGdal = getGdal; GV.toGDB = toGDB;
+  // any other GDAL format: write a GeoPackage, then ogr2ogr it to the chosen driver
+  async function toOGR(layers, epsg, wkt, base, fmt, multi) {
+    const D = { xlsx: ['XLSX', 'إكسيل'], tab: ['MapInfo File', 'MapInfo'], gml: ['GML', 'GML'], fgb: ['FlatGeobuf', 'FlatGeobuf'], sqlite: ['SQLite', 'SQLite'], dgn: ['DGN', 'MicroStation DGN'], gpx: ['GPX', 'GPX'] }[fmt];
+    const P = Writers.prepGDB(layers);
+    const SQL = await initSqlJs({});
+    const gp = await Writers.gpkg(P, epsg, wkt, SQL);
+    const Gdal = await getGdal(); $('#busyText').textContent = 'بكتب ' + D[1] + '…';
+    const FS = Gdal.Module.FS; const id = 'x' + Date.now();
+    FS.writeFile('/input/' + id + '.gpkg', gp);
+    const ds = await Gdal.open('/input/' + id + '.gpkg');
+    const before = new Set(FS.readdir('/output'));
+    const opts = ['-f', D[0]];
+    if (fmt === 'gpx') opts.push('-dsco', 'GPX_USE_EXTENSIONS=YES', '-nlt', 'POINT');
+    if (fmt === 'dgn') opts.push('-dsco', '3D=NO');
+    const single = ['tab', 'fgb', 'dgn', 'gpx'].includes(fmt); // single-layer drivers: one file per layer
+    try {
+      if (!single) await Gdal.ogr2ogr(ds.datasets[0], opts, id);
+      else { const names = P.map(l => l.name); for (let i = 0; i < names.length; i++) { const nm = names[i]; await Gdal.ogr2ogr(ds.datasets[0], opts.concat(fmt === 'tab' ? ['-lco', 'ENCODING=UTF-8'] : []).concat(['-sql', 'SELECT * FROM "' + nm.replace(/"/g, '""') + '"', '-nln', nm]), id + '__' + i); } }
+    }
+    catch (e) { throw new Error('GDAL (' + D[1] + '): ' + (e.message || e)); }
+    finally { try { Gdal.close(ds); } catch (e) { } try { FS.unlink('/input/' + id + '.gpkg'); } catch (e) { } }
+    const gname = base.replace(/[^\p{L}\p{N}_]/gu, '_') || 'export';
+    const out = [];
+    const walk = (path, rel) => { const st = FS.stat(path); if (FS.isDir(st.mode)) { FS.readdir(path).filter(n => n[0] !== '.').forEach(n => walk(path + '/' + n, rel + '/' + n)); try { FS.rmdir(path); } catch (e) { } } else { out.push({ name: rel, data: FS.readFile(path) }); try { FS.unlink(path); } catch (e) { } } };
+    const nm = i => { const l = P[i]; return l ? String(l.name).replace(/[^\p{L}\p{N}_-]/gu, '_') : gname; };
+    FS.readdir('/output').filter(n => n[0] !== '.' && !before.has(n)).forEach(n => walk('/output/' + n, n.replace(new RegExp(id + '__(\\d+)'), (m, i) => nm(+i)).replace(id, gname)));
+    if (!out.length) throw new Error('GDAL ماطلعش ملف ' + D[1]);
+    return out.map(f => ({ name: (multi ? fmt + '/' : '') + f.name, data: f.data }));
+  }
+  GV.getGdal = getGdal; GV.toGDB = toGDB; GV.toOGR = toOGR;
 
   $('#btnExport').addEventListener('click', () => openExport());
   $('#expGo').addEventListener('click', doExport);
