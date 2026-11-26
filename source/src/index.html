@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<script type="application/json" id="claude-artifacts-manifest">{"permissions": ["full-access"]}</script>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="__VER__";
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").then(r=>{window.GV_SWR=r}).catch(()=>{});
+const gvApply=v=>{const go=()=>location.replace(location.pathname+"?u="+v);Promise.all([window.caches?caches.keys().then(k=>Promise.all(k.map(x=>caches.delete(x)))):0,window.GV_SWR?GV_SWR.update().catch(()=>{}):0]).then(go,go)};
+const gvBar=v=>{if(document.getElementById("gvUpd")||!document.body)return;const b=document.createElement("div");b.id="gvUpd";b.textContent="🔄 فيه تحديث جديد للبرنامج — دوس هنا عشان يتحدّث";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#1565c0;color:#fff;padding:12px 18px;border-radius:24px;font:600 15px system-ui;box-shadow:0 4px 16px #0006;cursor:pointer;direction:rtl;max-width:92vw;text-align:center";b.onclick=()=>{b.textContent="⏳ بيتحدّث...";gvApply(v)};document.body.appendChild(b)};
+const gvChk=()=>fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.text():"").then(v=>{v=(v||"").trim();if(v&&v!==window.GV_VER){gvBar(v);const b=document.getElementById("gvUpd");if(b)b.textContent="⏳ فيه تحديث جديد — بيتحدّث لوحده...";setTimeout(()=>gvApply(v),2500)}}).catch(()=>{});
+window.GV_checkUpdate=gvChk;addEventListener("load",()=>setTimeout(gvChk,1200));document.addEventListener("visibilitychange",()=>{if(!document.hidden)gvChk()});setInterval(gvChk,5*60e3);}</script>
+<meta name="theme-color" content="#0b3d45">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>GIS Viewer — عارض بيانات GIS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>/*LEAFLET_CSS*/</style>
+<style>
+:root{--ink:#10292e;--muted:#5d7378;--line:#dbe5e6;--bg:#f4f8f8;--card:#fff;--accent:#0e7c86;--accent-d:#0b3d45;--warn:#c92a2a;--r:16px;
+  --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Arabic",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;font-size:15px}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+#map{position:fixed;inset:0;background:#e9efef}
+body.nobase #map{background-color:#eef3f3;background-image:linear-gradient(#dde6e7 1px,transparent 1px),linear-gradient(90deg,#dde6e7 1px,transparent 1px);background-size:32px 32px}
+.leaflet-container{font-family:inherit}
+.leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.7)!important}
+
+/* top bar */
+.top{position:fixed;top:calc(10px + var(--st));inset-inline:10px;z-index:900;display:flex;gap:8px;align-items:center;pointer-events:none}
+.brand{pointer-events:auto;display:flex;align-items:center;gap:10px;background:var(--accent-d);color:#fff;padding:8px 14px 8px 12px;border-radius:999px;box-shadow:0 4px 18px rgba(11,61,69,.25)}
+.brand .logo{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7fe3e8,#0e7c86 60%);position:relative}
+.brand .logo:after{content:"";position:absolute;inset:7px;border:2px solid #fff;border-radius:50%;border-top-color:transparent;transform:rotate(-35deg)}
+.brand b{font-weight:700;letter-spacing:.2px}
+.brand small{opacity:.7;font-size:11px;display:block;margin-top:-3px}
+.spacer{flex:1}
+.fab-col{position:fixed;left:10px;top:calc(70px + var(--st));z-index:900;display:flex;flex-direction:column;gap:8px}
+.round{pointer-events:auto;width:46px;height:46px;border-radius:14px;background:var(--card);box-shadow:0 2px 10px rgba(16,41,46,.16);display:grid;place-items:center;font-size:19px;position:relative}
+.round:active{transform:scale(.95)}
+.round svg{width:22px;height:22px;stroke:var(--accent-d);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.badge{position:absolute;top:-4px;left:-4px;min-width:19px;height:19px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 5px}
+.badge:empty{display:none}
+.zoom-col{position:fixed;left:10px;bottom:calc(96px + var(--sb));z-index:900;display:flex;flex-direction:column;gap:8px}
+
+/* main open button */
+.open-bar{position:fixed;inset-inline:0;bottom:calc(18px + var(--sb));z-index:900;display:flex;justify-content:center;pointer-events:none}
+.open-btn{pointer-events:auto;display:flex;align-items:center;gap:10px;background:var(--accent);color:#fff;font-weight:600;font-size:16px;padding:14px 24px;border-radius:999px;box-shadow:0 8px 24px rgba(14,124,134,.4)}
+.open-btn:active{transform:scale(.97)}
+.open-btn svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+#centerXY{position:fixed;right:10px;bottom:calc(84px + var(--sb));z-index:899;background:rgba(255,255,255,.88);font:12px ui-monospace,Menlo,Consolas,monospace;direction:ltr;padding:4px 8px;border-radius:8px;color:var(--muted)}
+.crosshair{position:fixed;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;z-index:800;pointer-events:none;opacity:.55}
+.crosshair:before,.crosshair:after{content:"";position:absolute;background:var(--accent-d)}
+.crosshair:before{left:8px;top:0;width:2px;height:18px}.crosshair:after{top:8px;left:0;height:2px;width:18px}
+body:not(.has-data) .crosshair,body:not(.has-data) #centerXY,body:not(.has-data) .fab-col,body:not(.has-data) .zoom-col,body:not(.has-data) .open-bar{display:none}
+
+/* empty state */
+.empty{position:fixed;inset:0;z-index:850;display:flex;align-items:center;justify-content:center;padding:90px 18px 120px;pointer-events:none}
+body.has-data .empty{display:none}
+.empty-card{pointer-events:auto;max-width:420px;width:100%;background:rgba(255,255,255,.96);backdrop-filter:blur(6px);border-radius:24px;padding:24px 22px;box-shadow:0 10px 40px rgba(16,41,46,.18);text-align:center}
+.empty-card h1{font-size:21px;margin:4px 0 6px}
+.empty-card p{margin:0 0 16px;color:var(--muted);line-height:1.6}
+.fmts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 18px}
+.fmt{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 4px;font-size:12px;line-height:1.3}
+.fmt b{display:block;font-size:13px;color:var(--accent-d)}
+.big-open{width:100%;justify-content:center}
+.hint{font-size:12px;color:var(--muted);margin-top:12px!important;margin-bottom:0!important}
+
+/* sheets */
+/* non-blocking panels: the map stays live (pan, zoom, select, edit) while they are open */
+.sheet.panel,.sheet.dock{box-shadow:0 6px 24px rgba(0,0,0,.22)}
+.sheet .min-btn{margin-inline-start:auto}
+.sheet.min .sh-body,.sheet.min .tbl-tools,.sheet.min .tbl-wrap,.sheet.min #tblMore{display:none!important}
+.sheet.min{max-height:none!important;height:auto!important}
+@media(max-width:759px){.sheet.panel,.sheet.dock{max-height:48vh}}
+@media(min-width:760px){.sheet.panel{inset-inline:auto;left:16px;right:auto;top:16px;bottom:16px;width:440px;max-height:none;border-radius:18px}
+ .sheet.dock{inset-inline:auto;left:16px;right:16px;bottom:16px;width:auto;height:40vh;max-height:none;border-radius:18px}
+ body.pinned .sheet.panel.open{left:70px}
+ .sheet.panel.right{left:auto;right:16px;width:560px}
+ body:has(.sheet.panel:not(.right).open) .sheet.dock{left:calc(var(--pw,440px) + 32px)}
+ body:has(.sheet.panel.right.open) .sheet.dock{right:calc(var(--prw,560px) + 32px)}}
+.sheet .rs{display:none}
+.sheet .rz{position:absolute;z-index:5;background:transparent}
+.rz.n{top:-5px;left:14px;right:14px;height:10px;cursor:ns-resize}.rz.s{bottom:-5px;left:14px;right:14px;height:10px;cursor:ns-resize}
+.rz.e{right:-5px;top:14px;bottom:14px;width:10px;cursor:ew-resize}.rz.w{left:-5px;top:14px;bottom:14px;width:10px;cursor:ew-resize}
+.rz.ne,.rz.nw,.rz.se,.rz.sw{width:16px;height:16px}.rz.ne{top:-6px;right:-6px;cursor:nesw-resize}.rz.sw{bottom:-6px;left:-6px;cursor:nesw-resize}.rz.nw{top:-6px;left:-6px;cursor:nwse-resize}.rz.se{bottom:-6px;right:-6px;cursor:nwse-resize}
+.rz:hover{background:rgba(12,133,153,.22);border-radius:6px}
+.sel-ring{animation:selp 1.2s ease-in-out infinite}@keyframes selp{50%{stroke-opacity:.35}}
+.gone{opacity:0;max-height:0!important;overflow:hidden;margin:0!important;padding:0!important;transition:all .18s}
+#crsSheet.open,#msgSheet.open,#pickSheet.open,#saveSheet.open{z-index:3000}#scrim.show{z-index:2999}
+.lg-ck{width:18px;height:18px;flex:none;margin-inline-end:4px}.lgrp{border:1px dashed #9ad0d8;border-radius:12px}.lg-bar input,.lg-bar select{padding:4px 8px;border-radius:8px;border:1px solid var(--line);font:inherit;font-size:12px}
+.leaflet-pane>svg{pointer-events:none}.leaflet-pane>svg .leaflet-interactive{pointer-events:visiblePainted;pointer-events:auto}
+.swipe-h{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:#f08c00;z-index:700;cursor:ew-resize;touch-action:none}.swipe-h span{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#f08c00;color:#fff;border-radius:10px;padding:4px 8px;font-size:12px;white-space:nowrap}
+.edbar{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:1500;display:flex;align-items:center;gap:4px;background:var(--card);border-radius:14px;padding:5px 8px;box-shadow:0 6px 22px rgba(0,0,0,.22);direction:rtl}
+.edbar[hidden]{display:none}.edb{border:0;background:#f1f5f6;border-radius:10px;min-width:36px;height:36px;font-size:17px;cursor:pointer}.edb.on{background:#0c8599;color:#fff;box-shadow:inset 0 0 0 2px #0a6b7b}
+.edgrip{cursor:move;color:#99a;padding:0 4px;user-select:none}.edinfo{font-size:12px;color:var(--muted);padding:0 6px;white-space:nowrap}
+.vtx-h{background:#fff;border:2px solid #0c8599;border-radius:3px}.ed-cross{cursor:crosshair!important}#btnEdit.on{background:#0c8599;color:#fff}
+.sh-head.movable{cursor:move;user-select:none;-webkit-user-select:none}.sheet.moving{transition:none!important;user-select:none;opacity:.96}
+.sheet.panel .rs{top:20px;bottom:20px;width:10px;cursor:ew-resize;right:-5px}
+.sheet.panel.right .rs{right:auto;left:-5px}
+.sheet.dock .rs{left:20px;right:20px;height:12px;top:-6px;cursor:ns-resize}
+.sheet .rs:hover,.sheet .rs.on{background:rgba(12,133,153,.25);border-radius:6px}
+#tbl tr.sel td{background:#fff3bf!important;font-weight:600}
+#scrim{position:fixed;inset:0;background:rgba(10,30,34,.35);z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s}
+#scrim.show{opacity:1;pointer-events:auto}
+.sheet{position:fixed;inset-inline:0;bottom:0;z-index:1001;background:var(--card);border-radius:22px 22px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.18);transform:translateY(105%);transition:transform .25s cubic-bezier(.2,.8,.2,1);max-height:82vh;display:flex;flex-direction:column;padding-bottom:var(--sb)}
+.sheet.open{transform:none}
+.sheet.tall{height:88vh;max-height:88vh}
+@media(min-width:760px){.sheet{inset-inline:auto;right:16px;bottom:16px;width:430px;border-radius:22px;max-height:calc(100vh - 32px)}.sheet.tall{height:calc(100vh - 32px);max-height:none;width:min(900px,calc(100vw - 32px))}}
+.grab{width:42px;height:5px;border-radius:3px;background:#cfdadb;margin:9px auto 2px;flex:none}
+.sh-head{display:flex;align-items:center;gap:10px;padding:8px 16px 10px;border-bottom:1px solid var(--line);flex:none}
+.sh-head h2{font-size:17px;margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sh-head .sub{font-size:12px;color:var(--muted);font-weight:400;display:block}
+.sh-body{overflow:auto;padding:10px 16px 18px;-webkit-overflow-scrolling:touch}
+.icon-btn{width:38px;height:38px;border-radius:12px;background:var(--bg);display:grid;place-items:center;font-size:16px;flex:none}
+.icon-btn.small{width:34px;height:34px;font-size:15px;border-radius:10px}
+.muted{color:var(--muted)}.pad{padding:10px}.small{font-size:12px}.mono{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr;unicode-bidi:embed}
+.chip{display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-size:13px;color:var(--accent-d);text-decoration:none}
+
+/* layers */
+.src{margin-bottom:14px}
+.src-head{display:flex;align-items:center;gap:8px;padding:6px 0}
+.src-title{flex:1;min-width:0}
+.src-title b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:11px;background:#e3f3f4;color:var(--accent);padding:2px 8px;border-radius:6px;font-weight:600}
+.src-tools{display:flex;gap:6px;margin:2px 0 8px}
+.err{background:#fff0f0;color:var(--warn);border-radius:10px;padding:10px 12px;margin:4px 0;line-height:1.6;font-size:13px;white-space:pre-line}
+.lyr{display:flex;align-items:center;gap:10px;padding:8px;border-radius:14px;background:var(--bg);margin-bottom:6px}
+.lyr.off{opacity:.5}
+.sw{width:38px;height:38px;border-radius:11px;background:var(--c);color:#fff;font-size:16px;display:grid;place-items:center;flex:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+.lyr.off .sw{background:#c8d3d4}
+.lyr-info{flex:1;min-width:0;cursor:pointer}
+.lyr-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:auto}
+.lyr-meta{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lyr-acts{display:flex;gap:4px}
+.lyr-acts .icon-btn{background:#fff}
+
+/* feature */
+.ftable{width:100%;border-collapse:collapse;font-size:14px}
+.ftable th{text-align:start;color:var(--muted);font-weight:500;padding:8px 0;vertical-align:top;width:40%;border-bottom:1px solid var(--line);direction:ltr;unicode-bidi:plaintext;font-size:13px}
+.ftable td{padding:8px 8px;border-bottom:1px solid var(--line);word-break:break-word;unicode-bidi:plaintext;white-space:pre-line}
+td.null{color:#a9b8ba}
+#featCoords{margin-bottom:10px}
+.coord{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#e3f3f4;border-radius:12px;padding:8px 10px;margin-bottom:6px}
+.coord .mono{flex:1;font-size:13px}
+.meas{font-weight:600;color:var(--accent-d);margin-bottom:6px}
+
+/* table */
+.tbl-tools{display:flex;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);flex:none}
+.tbl-tools input{flex:1;font:inherit;padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);outline:none}
+.tbl-tools input:focus{border-color:var(--accent)}
+.tbl-wrap{overflow:auto;flex:1;-webkit-overflow-scrolling:touch}
+#tbl{border-collapse:separate;border-spacing:0;font-size:13px;min-width:100%}
+#tbl th{position:sticky;top:0;background:#eef5f5;text-align:start;padding:9px 10px;white-space:nowrap;border-bottom:1px solid var(--line);font-weight:600;direction:ltr}
+#tbl td{padding:8px 10px;border-bottom:1px solid #edf2f2;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;unicode-bidi:plaintext}
+#tbl .rn{color:var(--muted);position:sticky;right:0;background:#fff;font-size:12px}
+#tbl th.rn{background:#eef5f5;z-index:1}
+#tbl tr.geo{cursor:pointer}#tbl tr.geo:active td{background:#e3f3f4}
+#tblMore{margin:12px auto;display:block}
+
+/* crs */
+.crs-opt{display:block;width:100%;text-align:start;padding:13px 14px;border-radius:12px;background:var(--bg);margin-bottom:6px;font-weight:500}
+.crs-opt.on{background:#e3f3f4;box-shadow:inset 0 0 0 2px var(--accent)}
+.base-opt{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:14px;background:var(--bg);margin-bottom:8px;text-align:start;font-weight:500}
+.base-opt.on{box-shadow:inset 0 0 0 2px var(--accent);background:#e3f3f4}
+.base-prev{width:54px;height:40px;border-radius:10px;flex:none}
+
+#toast{position:fixed;left:50%;bottom:calc(90px + var(--sb));transform:translate(-50%,20px);background:var(--accent-d);color:#fff;padding:10px 16px;border-radius:12px;z-index:1100;opacity:0;transition:.25s;pointer-events:none;max-width:88vw;text-align:center;line-height:1.5;font-size:14px}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#busy{position:fixed;inset:0;z-index:1200;background:rgba(244,248,248,.75);display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-weight:600}
+#busy.show{display:flex}
+.spin{width:42px;height:42px;border-radius:50%;border:4px solid #cfe3e4;border-top-color:var(--accent);animation:sp 0.8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+body.drag:after{content:"افلت الملفات هنا";position:fixed;inset:12px;border:3px dashed var(--accent);border-radius:24px;background:rgba(14,124,134,.08);z-index:1300;display:grid;place-items:center;font-size:22px;font-weight:700;color:var(--accent-d)}
+#measPanel{position:fixed;inset-inline:10px;bottom:calc(16px + var(--sb));z-index:950;background:var(--card);border-radius:18px;box-shadow:0 8px 28px rgba(16,41,46,.22);padding:12px 14px;display:none}
+body.measuring #measPanel{display:block}body.measuring .open-bar{display:none}body.measuring .zoom-col{bottom:calc(150px + var(--sb))}body.measuring #map{cursor:crosshair}
+body.measuring #btnMeasure{background:#f03e3e}body.measuring #btnMeasure svg{stroke:#fff}
+.mp-txt b{display:block;font-size:17px}.mp-txt span{font-size:12px;color:var(--muted)}
+.mp-btns{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}.mp-btns .chip.on{background:#ffe3e3;border-color:#f03e3e;color:#c92a2a}.mp-btns .done{background:var(--accent);color:#fff;border-color:var(--accent);margin-inline-start:auto}
+@media(min-width:760px){#measPanel{inset-inline:auto;left:70px;width:380px}}
+.fld{display:block;font-size:13px;color:var(--muted);margin-bottom:12px}
+.fld select{display:block;width:100%;margin-top:6px;font:inherit;font-size:15px;color:var(--ink);padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg)}
+.leg{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line)}
+.leg-c{width:22px;height:22px;border-radius:7px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)}
+.leg-l{flex:1;unicode-bidi:plaintext;word-break:break-word}.leg-n{color:var(--muted);font-size:12px}
+.sw{background:var(--c)}
+.lbl-wrap{background:none;border:0}
+.lbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:12px;font-weight:600;color:#10292e;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff;pointer-events:none;unicode-bidi:plaintext;border-bottom:2px solid var(--lc);padding:0 2px;line-height:1.2}
+.lbl.pt{transform:translate(8px,-130%)}
+#lblNote{position:fixed;top:calc(64px + var(--st));left:50%;transform:translateX(-50%);z-index:880;background:rgba(16,41,46,.8);color:#fff;font-size:12px;padding:4px 10px;border-radius:8px;display:none}#lblNote.show{display:block}
+#pickBar{position:fixed;inset-inline:10px;bottom:calc(16px + var(--sb));z-index:950;background:var(--card);border-radius:18px;box-shadow:0 8px 28px rgba(16,41,46,.22);padding:12px 14px;display:none}
+body.picking #pickBar{display:block}body.picking .open-bar{display:none}#pickMsg{font-weight:600}
+@media(min-width:760px){#pickBar{inset-inline:auto;left:70px;width:420px}}
+#featExtra:empty{display:none}#featExtra{margin-bottom:10px}
+.photos{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px}.photos img{height:110px;border-radius:10px;object-fit:cover}.photos.sm img{height:64px}
+.cmp{border-inline-start:4px solid var(--sc,#adb5bd);background:var(--bg);border-radius:10px;padding:9px 12px;margin-bottom:10px;display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.cmp:empty{display:none}.cmp b{color:var(--sc)}.cmp .diff{font-size:13px;color:#c92a2a}
+.chip.danger{color:#c92a2a;border-color:#ffc9c9}
+.fld input{display:block;width:100%;margin-top:6px;font:inherit;font-size:15px;color:var(--ink);padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg)}
+.fld input[hidden]{display:none}
+.fld small.gis{display:block;margin-top:4px;color:var(--muted)}.fld small.gis.bad{color:#c92a2a;font-weight:600}.fld small.gis.ok{color:#2f9e44}
+.step{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}.step>b{display:block;margin-bottom:8px}
+.cklist{max-height:180px;overflow:auto}details.fgrp{border:1px solid var(--line);border-radius:8px;padding:4px 8px;margin:6px 0}details.fgrp summary{cursor:pointer;font-size:13px;padding:4px 0}details.fgrp .chip{padding:1px 8px;font-size:11px}.cklist.two{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;margin:8px 0}
+.ck{display:flex;align-items:center;gap:8px;padding:6px 0}.ck input{width:18px;height:18px;accent-color:var(--accent)}
+.row3{display:grid;grid-template-columns:1.4fr .8fr 1fr;gap:6px;margin-bottom:6px}.row3 select,.row3 input{font:inherit;padding:9px;border-radius:10px;border:1px solid var(--line);background:var(--bg);min-width:0}
+.hub-h{display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px}.hub-h h3{margin:0;font-size:15px}
+.fcard{border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:10px}
+.fc-top{display:flex;gap:10px;align-items:center}.fc-dot{width:14px;height:14px;border-radius:50%;flex:none}.fc-name b{display:block}.fc-name small{font-size:12px}
+.fc-stats{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.chip0{font-size:12px;background:var(--bg);padding:3px 9px;border-radius:999px;font-weight:600}
+.fc-acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.open-btn.sm{padding:9px 16px;font-size:14px;box-shadow:none}
+.note{background:#fff8e6;border-radius:12px;padding:12px;line-height:1.7}.tip{margin-top:16px;line-height:1.6}
+.fb-row{display:grid;grid-template-columns:1fr 130px 34px;gap:6px;align-items:center;padding:8px;border-radius:12px;background:var(--bg);margin-bottom:6px}
+.fb-row input,.fb-row select{font:inherit;padding:8px;border-radius:9px;border:1px solid var(--line);background:#fff;min-width:0}.fb-row .full{grid-column:1/-1}.fb-row .ck{grid-column:1/-1;padding:0}
+.fb-foot{display:flex;gap:10px;align-items:center;margin-top:16px}
+@media(min-width:1000px){#layerSheet{right:16px;top:16px;bottom:16px;width:380px;max-height:none}#layerSheet.open~.fab-col{}}
+.save-dot{position:absolute;bottom:5px;left:5px;width:9px;height:9px;border-radius:50%;background:#ced4da;border:2px solid #fff}
+.save-dot.saved{background:#2f9e44}.save-dot.pending,.save-dot.saving{background:#f59f00}.save-dot.error{background:#e03131}.save-dot.saving{animation:pl 1s infinite}
+@keyframes pl{50%{opacity:.3}}
+#syncOffer{position:fixed;inset-inline:10px;top:calc(64px + var(--st));z-index:960;background:var(--card);border-radius:16px;box-shadow:0 8px 28px rgba(16,41,46,.22);padding:12px 14px;display:none;line-height:1.6}#syncOffer.show{display:block}
+@media(min-width:760px){#syncOffer{inset-inline:auto;left:70px;width:420px}}
+.back-btn{font:inherit;font-size:13px;font-weight:600;color:var(--accent-d);background:#e3f3f4;border-radius:10px;padding:7px 10px;flex:none}
+#btnPin.on{background:var(--accent);color:#fff}
+body.pinned #layerSheet{max-height:46vh}
+@media(min-width:1000px){body.pinned #layerSheet{max-height:none}body.pinned .sheet.open:not(#layerSheet){right:auto;left:70px}}
+.anno{position:absolute;left:0;top:0;transform:translateY(-100%);transform-origin:left bottom;white-space:nowrap;font-weight:600;line-height:1;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff;pointer-events:none;unicode-bidi:plaintext}
+.chip.on{background:#e3f3f4;border-color:var(--accent)}
+.tools{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tool{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:start;padding:14px;border-radius:16px;background:var(--bg);border:1px solid var(--line)}
+.tool span{font-size:22px}.tool b{font-size:15px}.tool small{color:var(--muted);font-size:12px}
+.fmt-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.fmt-ck{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--bg);flex-wrap:wrap}
+.fmt-ck input{width:18px;height:18px;accent-color:var(--accent)}.fmt-ck small{color:var(--muted);font-size:11px;width:100%;padding-inline-start:26px;margin-top:-4px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row2 select{font:inherit;padding:9px;border-radius:10px;border:1px solid var(--line);background:var(--bg);min-width:0}
+.ok-note{background:#ebfbee;color:#2b8a3e;border-radius:12px;padding:12px;font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px}
+.kpi{border:1px solid var(--line);border-top:4px solid var(--kc,var(--accent));border-radius:12px;padding:10px 12px}.kpi b{display:block;font-size:22px;color:var(--kc,var(--accent-d))}.kpi span{font-size:12px;color:var(--muted)}
+.qc-row{display:grid;grid-template-columns:22px 1fr 150px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.qc-row select{font:inherit;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}.qc-row input{width:18px;height:18px;accent-color:var(--accent)}
+.qc-nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.qc-nm small{font-size:11px}
+.qc-type{display:grid;grid-template-columns:12px 1fr auto auto;gap:8px;align-items:center;width:100%;text-align:start;padding:8px 6px;border-radius:10px}.qc-type:hover{background:var(--bg)}.qc-dot{width:10px;height:10px;border-radius:50%}.qc-type small{font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dgrid{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:900px){.dgrid{grid-template-columns:1fr 1fr}}
+.dcard{border:1px solid var(--line);border-radius:16px;padding:12px}.dcard.wide{grid-column:1/-1}.dcard h3{margin:0 0 10px;font-size:15px}
+.bars{display:flex;flex-direction:column;gap:6px;min-width:0}.bar-row{display:grid;grid-template-columns:minmax(0,38%) minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px;min-width:0}.dcard{overflow:hidden;min-width:0}
+.bar-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext}.bar-t{background:var(--bg);height:14px;border-radius:6px;overflow:hidden}.bar-b{height:100%;border-radius:6px}.bar-v{font-weight:600;font-size:12px}
+.dtable{width:100%;border-collapse:collapse;font-size:13px}.dtable th{text-align:start;background:#eef5f5;padding:7px}.dtable td{padding:6px 7px;border-bottom:1px solid var(--line)}
+@media(min-width:760px){.sheet.wide2{width:min(1100px,calc(100vw - 100px))}}
+.tpl-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.tpl{display:flex;flex-direction:column;align-items:flex-start;text-align:start;gap:3px;padding:12px;border-radius:14px;border:1px solid var(--line);border-inline-start:5px solid var(--tc,var(--accent));background:var(--card)}
+.tpl-i{font-size:22px}.tpl small{font-size:11px;color:var(--muted);line-height:1.4}
+.fmap{margin:8px 0;padding:8px;background:var(--bg);border-radius:12px}.fm-row{display:grid;grid-template-columns:1fr auto 1.3fr 1fr;gap:6px;align-items:center;padding:4px 0}.fm-row select,.fm-row input{font:inherit;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line);background:#fff;min-width:0}.fm-n{font-weight:600;font-size:13px;direction:ltr;text-align:start}
+.fill-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.fill{font-size:11px;padding:3px 8px;border-radius:999px;direction:ltr}.fill.ok{background:#ebfbee;color:#2b8a3e}.fill.mid{background:#fff4e6;color:#d9480f}.fill.no{background:#fff0f0;color:#c92a2a}
+.tbl-wrap.ct{max-height:50vh;border:1px solid var(--line);border-radius:12px;margin:8px 0}#ctTbl{border-collapse:collapse;font-size:12px;min-width:100%}#ctTbl th{position:sticky;top:0;background:#eef5f5;padding:4px}#ctTbl tr:nth-child(2) th{top:34px}#ctTbl th input,#ctTbl th select{font:inherit;font-size:12px;width:120px;padding:5px;border:1px solid var(--line);border-radius:7px}#ctTbl td{padding:4px 6px;border-bottom:1px solid #edf2f2;white-space:nowrap;unicode-bidi:plaintext}
+.fix-g{margin:14px 0 4px;font-size:13px;color:var(--accent)}.fix-n{margin-inline-start:8px;background:#fff4e6;color:#d9480f;border-radius:999px;padding:0 8px;font-size:12px}.fix-n:empty{display:none}.fix-note{display:block;font-size:11px;line-height:1.5;margin-top:2px}
+#msgText{white-space:pre-line;line-height:1.7;margin:4px 0 14px}
+.qsec{background:#f3f0ff;border:1px solid #d0bfff;border-radius:14px;padding:10px;margin:10px 0}.qcard{background:#fff;border-radius:12px;padding:10px;margin-top:8px;border:1px solid var(--line)}.qtext{line-height:1.7;margin-bottom:8px}.qcard .chip{margin-inline-end:6px}.chip.ok{background:#ebfbee;color:#2b8a3e;border-color:#b2f2bb}
+.prob{border:1px solid var(--line);border-radius:12px;margin:6px 0;overflow:hidden}.prob>.prob-h{display:flex;gap:8px;align-items:center;padding:9px 10px;cursor:pointer}.prob-d{display:none;padding:0 10px 10px;font-size:13px}.prob.open .prob-d{display:block}.prob .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.hint{background:#fff9db;border-radius:10px;padding:7px 10px;color:#7c5e00;font-size:12.5px;line-height:1.6;margin:6px 0}
+.rule{display:flex;gap:8px;align-items:center;padding:7px 9px;border:1px solid var(--line);border-radius:10px;margin:5px 0;font-size:13px}.rule.off{opacity:.45}.rule>span{flex:1;min-width:0}.rule-form{display:grid;gap:6px;padding:8px;background:var(--bg);border-radius:10px;margin-top:6px}.rule-form select,.rule-form input{font:inherit;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line)}
+.org-row{display:grid;grid-template-columns:1fr minmax(0,1.1fr);gap:8px;align-items:center;padding:8px;border-radius:12px;border:1px solid var(--line);border-inline-start:5px solid #adb5bd;margin:5px 0}.org-row.net,.org-row.keep{border-inline-start-color:#2f9e44}.org-row.unk{border-inline-start-color:#f08c00;background:#fff9f0}.org-row.drop{opacity:.5}.org-nm{min-width:0;display:flex;flex-direction:column}.org-nm b{direction:ltr;text-align:start;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.org-row select{font:inherit;font-size:12.5px;padding:6px;border-radius:8px;border:1px solid var(--line);min-width:0}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;direction:ltr}.ok-note{background:#ebfbee;color:#2b8a3e;border-radius:12px;padding:10px;font-weight:600;margin-bottom:8px}
+.sel-styles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0 14px}.sel-st{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;border:1px solid var(--line);border-radius:12px;background:var(--card);font:inherit}.sel-st span{font-size:20px}.sel-st small{font-size:11px;text-align:center;line-height:1.3}.sel-st.on{border-color:var(--accent);background:#e6f4f4;box-shadow:inset 0 0 0 1px var(--accent)}@media(max-width:520px){.sel-styles{grid-template-columns:repeat(3,1fr)}}
+.sel-drawing,.sel-drawing .leaflet-interactive{cursor:crosshair!important}select.chip{font:inherit;font-size:13px}
+.tool.ai{background:linear-gradient(135deg,#f3f0ff,#e6fcf5);border-color:#b197fc}
+.ai-pre{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.ai-log{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.ai-msg{border-radius:14px;padding:10px 12px;line-height:1.75;font-size:14px;max-width:100%;overflow-x:auto}.ai-msg.user{background:#e6f4f4;align-self:flex-end;max-width:85%}.ai-msg.claude{background:#fff;border:1px solid var(--line)}
+.ai-msg h4{margin:10px 0 4px;font-size:15px;color:var(--accent)}.ai-msg p{margin:4px 0}.ai-msg ul,.ai-msg ol{margin:4px 0;padding-inline-start:20px}.ai-msg code{background:#f1f3f5;border-radius:5px;padding:0 4px;direction:ltr;unicode-bidi:embed}.ai-msg table{margin:6px 0}
+.ai-act{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px;padding:4px 8px;border-inline-start:3px solid #b197fc}.ai-act.done{opacity:.6;max-height:90px;overflow:auto}
+.ai-in{display:flex;gap:8px;align-items:flex-end;margin:8px 0}.ai-in textarea{flex:1;font:inherit;padding:10px;border-radius:12px;border:1px solid var(--line);resize:vertical;min-height:44px}
+.ai-note{display:flex;gap:8px;align-items:flex-start;width:100%;text-align:start;padding:6px;border-radius:10px;font:inherit;font-size:13px;background:none;border:0}.ai-note:hover{background:var(--bg)}.ai-note b,.ai-pin b{color:#fff;border-radius:50%;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px}.ai-pin b{border:2px solid #fff;box-shadow:0 1px 4px #0006}
+.tool.flow{background:linear-gradient(135deg,#e6f4f4,#fff4e6);border-color:#63c5c9;grid-column:1/-1}
+.flow-step{border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:8px 0;border-inline-start:5px solid #ced4da}.flow-step.done{border-inline-start-color:#2f9e44}.flow-step.cur{border-inline-start-color:var(--accent)}
+.flow-h{display:flex;gap:8px;align-items:center}.flow-n{width:24px;height:24px;border-radius:50%;background:#e9ecef;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}.done .flow-n{background:#2f9e44;color:#fff}
+.flow-step .fc-acts{margin-top:6px}.flow-tbl{padding:6px 0;border-bottom:1px dashed var(--line)}.flow-tbl small{unicode-bidi:plaintext}span.chip.ok{background:#ebfbee;color:#2b8a3e}
+.tag.lock{background:#fff4e6;color:#d9480f;margin-inline-start:4px}.tag.copy{background:#ebfbee;color:#2b8a3e;margin-inline-start:4px}.net-pick{display:flex;flex-wrap:wrap;gap:6px}.net-pick .chip.on{background:var(--accent);color:#fff}
+.anno-tiny{opacity:.45;border-radius:1px;transform-origin:0 100%;pointer-events:none}
+.tsec{font-weight:700;color:var(--muted);font-size:13px;margin:6px 2px}.tools.t3{grid-template-columns:repeat(2,1fr)}.tool.flow2{background:linear-gradient(135deg,#ebfbee,#e6f4f4);border-color:#8ce99a;grid-column:1/-1}
+details.adv{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}details.adv summary{cursor:pointer;color:var(--muted);font-size:13px;padding:6px 2px}
+.modes{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}.mode{display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px 10px;border-radius:16px;border:1px solid var(--line);background:var(--card);font:inherit;cursor:pointer}.mode span{font-size:28px}.mode b{font-size:15px}.mode small{color:var(--muted);font-size:12px;text-align:center}.mode.hot{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.mode:hover{background:#f1f8f8}
+.chip.main{background:var(--accent);color:#fff;border-color:var(--accent)}.more-tools{margin-top:4px}
+.more-tools[hidden]{display:none!important}.src-tools .chip{white-space:nowrap}
+.flow-prog{display:flex;gap:6px;justify-content:center;margin:6px 0 2px}.pdot{width:26px;height:6px;border-radius:4px;background:#dee2e6;cursor:pointer}.pdot.done{background:#2f9e44}.pdot.cur{background:var(--accent);width:40px}
+.flow-where{text-align:center;font-weight:700;margin:4px 0 10px;color:var(--accent)}
+.flow-step.fold{padding:8px 12px;margin:5px 0;opacity:.75;cursor:pointer}.flow-step.fold>:not(.flow-h){display:none}.flow-step.fold.done>p.small{display:block;margin:2px 0 0}
+.flow-step.cur{box-shadow:0 2px 10px #0001;border-inline-start-color:var(--accent);opacity:1}.flow-step.cur .flow-n{background:var(--accent);color:#fff}
+.flow-h{cursor:pointer}.flow-nav{display:flex;justify-content:space-between;gap:8px;margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}.flow-nav .chip:only-child{margin-inline-start:auto}
+.back-btn{font:inherit;font-size:14px;font-weight:700;border:0;background:#e6f4f4;color:var(--accent);border-radius:10px;padding:6px 10px;cursor:pointer;margin-inline-end:6px}
+.map-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:6px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line)}.map-row input:not([type]){font:inherit;font-size:13px;padding:5px;border-radius:8px;border:1px solid var(--line);min-width:0}.tools.t3 .tool:last-child:nth-child(odd){grid-column:1/-1}
+.auto-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:linear-gradient(135deg,#fff9db,#e6f4f4);border-radius:14px;padding:10px;margin:6px 0}.auto-bar small{flex:1;min-width:180px}
+.auto-card{background:#f8f9fa;border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:6px 0}.auto-l{font-size:13px;padding:3px 0;line-height:1.6}.auto-l.need{color:#d9480f;font-weight:600}.auto-l.ok{color:#2b8a3e}.auto-l.info{color:var(--muted)}
+.res-top{font-weight:700;font-size:15px;margin:2px 0 8px}.res-sec{border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:8px 0}.res-sec h3{margin:0 0 6px;font-size:15px}.res-sec.main{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.res-sec.need{border-color:#ffc078;background:#fff9f0}.res-sec.ok{background:#f4fcf5}
+.res-row{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--line)}.res-row:last-of-type{border-bottom:0}.res-row.empty{opacity:.55}.res-row>div{min-width:0}
+.res-todo{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed #ffd8a8;font-size:13.5px}.res-todo>span:nth-child(2){flex:1}.res-n{background:#f08c00;color:#fff;border-radius:50%;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.leg-row{display:grid;grid-template-columns:28px minmax(0,1.4fr) minmax(0,1fr) 58px 64px;gap:6px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}.leg-sw{width:26px;height:14px;border:3px solid;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:12px}.leg-sw.line{height:0;border-width:3px 0 0}.leg-sw.block{border:0;color:var(--accent)}.leg-d{min-width:0;display:flex;flex-direction:column}.leg-d b{font-size:13px;unicode-bidi:plaintext}.leg-row select,.leg-n{font:inherit;font-size:12px;padding:5px;border-radius:8px;border:1px solid var(--line);min-width:0;width:100%}
+
+/* simplified dock (v2) */
+.fab-col #btnLayers,.fab-col #btnTools,.fab-col #btnSave{display:none}
+.fab-col .round,.zoom-col .round{width:40px;height:40px;border-radius:12px}
+.fab-col .round svg{width:19px;height:19px}
+.dock{gap:0}
+.dock{left:50%;right:auto;transform:translateX(-50%);width:max-content;background:var(--card);border-radius:22px;box-shadow:0 6px 26px rgba(16,41,46,.22);padding:6px;pointer-events:auto;align-items:stretch;max-width:calc(100vw - 16px)}
+.dk{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:74px;padding:6px 8px;border-radius:16px;font-size:12px;font-weight:600;color:var(--accent-d);position:relative;white-space:nowrap}
+.dk i{font-style:normal;font-size:20px;line-height:1}
+.dk:hover{background:var(--bg)}
+.dk:active{transform:scale(.96)}
+.dk-open{background:var(--accent);color:#fff;flex-direction:row;gap:8px;font-size:15px;padding:10px 18px;margin-inline-end:4px}
+.dk-open:hover{background:var(--accent-d)}
+.dk-open svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2.4;stroke-linecap:round}
+.dk-badge{position:absolute;top:2px;left:14px;min-width:17px;height:17px;border-radius:9px;background:var(--accent);color:#fff;font:700 10px/17px system-ui;font-style:normal;padding:0 4px}
+.dk-badge:empty{display:none}
+@media(max-width:480px){.dk{min-width:0;flex:1;padding:6px 4px;font-size:11px}.dk-open{flex-direction:column;gap:2px;font-size:11px;padding:6px 8px}.dk-open svg{width:20px;height:20px}.dock{width:calc(100vw - 16px)}}
+#centerXY{bottom:calc(96px + var(--sb))}
+.zoom-col{bottom:calc(100px + var(--sb))}
+.sheet:not(.open){visibility:hidden;transition:transform .25s cubic-bezier(.2,.8,.2,1),visibility 0s .25s}
+.hint-s{font-size:12px;color:var(--muted);margin:14px 0 0!important}
+.home-x{display:none;margin-top:12px;color:var(--accent-d);font-weight:600;font-size:14px}
+body.show-home .empty{display:flex!important;background:rgba(16,41,46,.25);pointer-events:auto}
+body.show-home .home-x{display:inline-block}
+.brand{cursor:pointer}
+
+.lg-bar{flex-wrap:wrap;align-items:center;gap:6px}.lg-bar input,.lg-bar select{flex:1 1 140px;max-width:none!important;min-width:0}.lg-bar>span,.lg-bar>b{white-space:nowrap}
+.sel-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px}
+.qc-filt{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}.qc-rev{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:2600;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:10px 12px;width:min(560px,94vw);display:flex;flex-direction:column;gap:8px}.qc-rev-h{display:flex;gap:10px;align-items:center}.qc-rev-h b{flex:1}
+/* compact data table header: more rows visible, less map covered */
+#tblSheet .grab{margin:3px auto 0;height:4px}
+#tblSheet .sh-head{padding:2px 10px 3px;gap:6px;min-height:0}
+#tblSheet .sh-head h2{font-size:14px;margin:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.2;flex:1;min-width:0}
+#tblSheet .sh-head h2 .sub{display:inline;font-size:12px;margin:0}
+#tblSheet .sh-head button{width:auto;min-width:28px;height:28px;padding:0 8px;border-radius:8px;font-size:13px}
+#tblSheet #tblOnlyClr{height:24px;padding:0 8px;font-size:12px}
+#tblSheet .tbl-tools{padding:3px 10px}
+#tblSheet .tbl-tools input{height:28px!important;min-height:0!important;padding:2px 10px!important;font-size:13px!important}
+#tblSheet .sel-tabs{margin:2px 0}
+#tblSheet .sel-tabs .chip{height:24px;padding:0 8px;font-size:12px}
+#tblSheet th,#tblSheet td{padding-top:4px;padding-bottom:4px}
+#tblSheet{display:flex;flex-direction:column}
+#tblSheet .tbl-wrap{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-width:auto;scrollbar-color:var(--accent) var(--bg)}
+#tblSheet .tbl-wrap::-webkit-scrollbar{height:14px;width:12px;background:var(--bg)}
+#tblSheet .tbl-wrap::-webkit-scrollbar-thumb{background:var(--accent);border-radius:7px;border:3px solid var(--bg)}
+#tblSheet .tbl-wrap:focus{outline:none}
+#tblSheet .tbl-wrap{scrollbar-width:none}#tblSheet .tbl-wrap::-webkit-scrollbar:horizontal{height:0}
+.tbl-hscroll{flex:none;position:relative;height:16px;margin:2px 10px 6px;border-radius:8px;background:var(--bg);border:1px solid var(--line);cursor:pointer}.hs-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;background:var(--accent);cursor:grab;touch-action:none}.hs-thumb:active{cursor:grabbing}
+.exp-grp{border:1px solid var(--line);border-radius:10px;padding:4px 8px;margin:4px 0}.exp-grp summary{cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 0;list-style:none}.exp-grp summary::-webkit-details-marker{display:none}.exp-arr{display:inline-block;width:18px;text-align:center;color:var(--accent);transition:transform .15s}.exp-grp[open] .exp-arr{transform:rotate(-90deg)}.exp-grp .ck{padding-inline-start:18px}
+.ctx-menu{position:fixed;z-index:3500;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:6px;min-width:220px;display:flex;flex-direction:column}.ctx-menu button{background:none;border:0;color:inherit;font:inherit;text-align:start;padding:9px 12px;border-radius:8px;cursor:pointer}.ctx-menu button:hover{background:var(--bg)}.ctx-menu .danger{color:var(--warn)}.ctx-h{font-weight:700;padding:6px 12px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}.ctx-sep{height:1px;background:var(--line);margin:4px 6px}
+.base-help{position:fixed;left:50%;bottom:calc(96px + var(--sb));transform:translateX(-50%);z-index:1200;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;gap:10px;align-items:center;max-width:92vw;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px}.base-help .btn{white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="crosshair"></div>
+
+<div class="top">
+  <div class="brand"><div class="logo"></div><div><b>GIS Viewer</b><small>🏠 الرئيسية</small></div></div>
+  <div class="spacer"></div>
+</div>
+
+<div class="fab-col">
+  <button class="round" id="btnLayers" title="الطبقات"><svg viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5z"/><path d="m2 13 10 5 10-5"/></svg><span class="badge" id="layerCount"></span></button>
+  <button class="round" id="btnBase" title="الخريطة الخلفية"><svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg></button>
+  <button class="round" id="btnZoomAll" title="عرض كل البيانات"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  <button class="round" id="btnSave" title="الحفظ"><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg><span id="saveDot" class="save-dot"></span></button>
+  <button class="round" id="btnTools" title="الأدوات"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+  <button class="round" id="btnMeasure" title="قياس"><svg viewBox="0 0 24 24"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg></button>
+  <button class="round" id="btnLocate" title="موقعي"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+</div>
+<div class="zoom-col">
+  <button class="round" id="btnZin" title="تكبير">＋</button>
+  <button class="round" id="btnZout" title="تصغير">－</button>
+</div>
+<div id="centerXY" title="نسخ الإحداثيات"></div>
+
+<div class="empty">
+  <div class="empty-card">
+    <h1>عايز تعمل إيه؟</h1>
+    <div class="modes">
+      <button class="mode" data-mode="view"><span>📂</span><b>افتح وشوف</b><small>أي ملف GIS أو كاد على الخريطة</small></button>
+      <button class="mode hot" data-mode="cad"><span>🚀</span><b>من الكاد لـ GIS</b><small>افتح DWG/DXF وامشي خطوة بخطوة</small></button>
+      <button class="mode" data-mode="gis"><span>✅</span><b>فحص وتسليم GIS</b><small>افتح GDB/SHP وافحصها وطلّع التقرير</small></button>
+      <button class="mode" data-mode="field"><span>📍</span><b>شغل الموقع</b><small>فورمز ورفع ومقارنة</small></button>
+    </div>
+    <p class="hint-s">🔒 ملفاتك الأصلية مبتتعدلش — كل الشغل على نسخة</p><button class="home-x" id="homeClose">ارجع للخريطة ←</button>
+  </div>
+</div>
+
+<div class="open-bar dock">
+  <button class="dk dk-open" data-open><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>افتح ملف</span></button>
+  <button class="dk" id="dkLayers"><i>🗂</i><span>الطبقات</span><em class="dk-badge" id="dkCount"></em></button>
+  <button class="dk" id="dkCheck"><i>✅</i><span>افحص وكمّل</span></button>
+  <button class="dk" id="dkReport"><i>📊</i><span>تقرير وتصدير</span></button>
+  <button class="dk" id="dkMore"><i>☰</i><span>أدوات</span></button>
+</div>
+<input type="file" id="fileInput" multiple hidden>
+
+<div id="scrim"></div>
+
+<div class="sheet" id="layerSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>الطبقات</h2><button class="chip" data-open>＋ إضافة</button><button class="icon-btn" id="btnPin" title="تثبيت القائمة">📌</button><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body" id="layerList"></div>
+</div>
+
+<div class="sheet" id="featSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2><span id="featTitle"></span><span class="sub" id="featSub"></span></h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body"><div id="featExtra"></div><div id="featCoords"></div><table class="ftable"><tbody id="featBody"></tbody></table></div>
+</div>
+
+<div class="sheet dock" id="tblSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2><span id="tblTitle"></span><span class="sub" id="tblCount"></span></h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="tbl-tools"><input id="tblSearch" type="search" placeholder="بحث في البيانات…"></div>
+  <div class="tbl-wrap"><table id="tbl"></table><button class="chip" id="tblMore">عرض المزيد</button></div>
+  <div class="tbl-hscroll" id="tblHS" title="اسحب يمين وشمال — أو استخدم أسهم الكيبورد ← →"><div></div></div>
+</div>
+
+<div class="sheet" id="crsSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>نظام الإحداثيات<span class="sub" id="crsWhat"></span></h2></div>
+  <div class="sh-body">
+    <p class="muted" style="margin:4px 0 6px;line-height:1.6">الملف ده مفيهوش نظام إحداثيات (زي ملفات الكاد). اختار النظام اللي اترسم بيه:</p>
+    <p class="mono small muted" id="crsSample" style="margin:0 0 10px"></p>
+    <div id="crsList"></div>
+    <button class="chip" id="crsSkip" style="margin-top:6px">تخطي — اعرض الجدول بس</button>
+  </div>
+</div>
+
+<div class="sheet" id="baseSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>الخريطة الخلفية</h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body">
+    <button class="base-opt" data-k="osm"><span class="base-prev" style="background:linear-gradient(135deg,#f2efe9 40%,#aad3df 40% 55%,#f2efe9 55%),#f2efe9;box-shadow:inset 0 0 0 1px #ddd"></span>خريطة شوارع</button>
+    <button class="base-opt" data-k="sat"><span class="base-prev" style="background:linear-gradient(135deg,#4a5d3a,#8b7d5a 50%,#3d4f5f)"></span>قمر صناعي</button>
+    <button class="base-opt" data-k="hyb"><span class="base-prev" style="background:linear-gradient(135deg,#4a5d3a,#8b7d5a 50%,#3d4f5f);box-shadow:inset 0 0 0 3px rgba(255,255,255,.5)"></span>قمر صناعي بأسماء الشوارع</button>
+    <button class="base-opt" data-k="none"><span class="base-prev" style="background:#eef3f3;background-image:linear-gradient(#d5dfe0 1px,transparent 1px),linear-gradient(90deg,#d5dfe0 1px,transparent 1px);background-size:10px 10px"></span>بدون خلفية</button>
+  </div>
+</div>
+
+<div class="sheet" id="msgSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>ملاحظة</h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body"><p id="msgText"></p><button class="open-btn" data-close style="margin:auto">تمام</button></div>
+</div>
+
+<div id="measPanel"><div class="mp-txt"><b id="measMain"></b><span id="measSub"></span></div>
+  <div class="mp-btns"><button class="chip" id="measArea">مساحة</button><button class="chip" id="measUndo">تراجع ↶</button><button class="chip" id="measClear">مسح</button><button class="chip done" id="measDone">إنهاء</button></div></div>
+
+<div class="sheet" id="styleSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>تلوين الطبقة<span class="sub" id="styTitle"></span></h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body">
+    <label class="fld">لوّن حسب الحقل<select id="styField"></select></label>
+    <label class="fld" id="styModeRow">طريقة التقسيم<select id="styMode"><option value="auto">تلقائي</option><option value="num">فئات رقمية (من – إلى)</option><option value="cat">كل قيمة بلون</option></select></label>
+    <div id="styLegend"></div>
+    <label class="fld" style="margin-top:16px">الليبل (الكتابة على العناصر)<select id="styLabel"></select></label>
+  </div>
+</div>
+<div id="lblNote">الليبلز كتير، كبّر علشان تشوفها كلها</div>
+<div id="pickBar"><div id="pickMsg"></div><div class="mp-btns">
+  <button class="chip" id="pickGPS">📍 GPS</button>
+  <label class="chip">📷 من صورة<input type="file" id="pickPhotoIn" accept="image/*" hidden></label>
+  <button class="chip done" id="pickDone">تم</button><button class="chip" id="pickCancel">إلغاء</button></div></div>
+
+<div class="sheet tall" id="expSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>تحويل وتصدير<span class="sub" id="expCount"></span></h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body">
+    <div class="step"><b>1 · الطبقات</b><div id="expLayers" class="cklist"></div></div>
+    <div class="step"><b>2 · الصيغ (اختار واحدة أو أكتر)</b>
+      <div id="expFmts" class="fmt-grid"></div>
+      <p class="muted small" id="expHint" style="white-space:pre-line"></p>
+      <label class="fld">نظام الإحداثيات<select id="expCrs"></select></label>
+    </div>
+    <div class="step" id="kmlStep"><b>KML / KMZ</b>
+      <div class="fld"><span>طريقة التجميع (تقدر تختار الاتنين)</span><label class="ck"><input type="checkbox" id="kmlOne" checked><span>ملف واحد فيه كل الطبقات (كل طبقة فولدر)</span></label><label class="ck"><input type="checkbox" id="kmlSplit"><span>كل طبقة في ملف لوحدها</span></label></div>
+    </div>
+    <div class="step" id="cadStep"><b>إعدادات الكاد (ستاندرد اللايرات)</b>
+      <label class="fld">ستاندرد أسماء اللايرات<select id="cadStd"></select></label>
+      <label class="fld">تقسيم اللايرات<select id="cadMode"><option value="layer">لير لكل طبقة GIS</option><option value="field">لير لكل قيمة في حقل (زي القطر)</option><option value="pattern">نمط مخصص</option></select></label>
+      <div class="row2" id="cadFieldRow"><label class="fld">الحقل<select id="cadField"></select></label><label class="fld">أرقام بأصفار (مثلاً 4 ← 0160)<input id="cadPad" type="number" min="0" max="6" value="4"></label></div>
+      <label class="fld" id="cadPatternRow">النمط ({LAYER} = اسم الطبقة، {اسم_الحقل:4} = قيمة الحقل بأصفار)<input id="cadPattern" placeholder="C-WATR-PRPL-{DIAMETER:4}"></label>
+      <p class="mono small muted" id="cadExample"></p>
+      <label class="fld">الألوان<select id="cadColor"><option value="layer">لون لكل لير (ByLayer)</option><option value="field">لون حسب قيمة حقل</option><option value="feature">زي ألوان الخريطة</option></select></label>
+      <label class="fld">حقل الألوان<select id="cadColorField"></select></label>
+      <label class="ck small"><input type="checkbox" id="cadLabel" checked><span>اكتب الليبل (من "حقل الاسم/الليبل" تحت)</span></label>
+      <div class="row2"><label class="fld">ارتفاع النص (م)<input id="cadTextH" type="number" step="0.1" value="1.5"></label><label class="fld">لاحقة لير النصوص<input id="cadTextSuf" value="-IDEN" placeholder="-IDEN"></label></div>
+      <label class="ck small"><input type="checkbox" id="cadAlign" checked><span>النص يمشي بزاوية الخط</span></label>
+      <div class="row2"><label class="fld">النقط<select id="cadPoints"><option value="block">بلوك (رمز)</option><option value="circle">دايرة</option><option value="point">Point</option></select></label><label class="fld">حجم الرمز (م)<input id="cadSym" type="number" step="0.1" value="1"></label></div>
+      <label class="ck small"><input type="checkbox" id="cadAttrs" checked><span>بيانات GIS جوه البلوك كـ Attributes</span></label>
+      <label class="ck small"><input type="checkbox" id="cad3d"><span>3D (استخدم المناسيب Z)</span></label>
+      <label class="ck small" id="cadSheetRow"><input type="checkbox" id="cadSheet" checked><span>لوحة A1 جاهزة للطباعة: إطار + نوتس + ليجند بكميات الأز-بلت (من غير القائم) + سهم الشمال + مقياس + بيانات اللوحة</span></label>
+      <div class="row2" id="cadSheetInfo"><label class="fld">اسم المشروع / الزون<input id="cadProj" placeholder="ASBUILT FOR WATER NETWORK - ZONE-03"></label><label class="fld">رقم اللوحة<input id="cadDwgNo" placeholder="OTC-DAR-IF1-ASB-WAT-25-0002"></label></div>
+      <label class="fld" style="display:block">نظام الإحداثيات اللي يتكتب في اللوحة (فاضي = تلقائي من الإسقاط)<input id="cadCrsTxt" placeholder="WGS 1984 UTM Zone 38N"></label>
+      <div class="fld" id="cadLabTypesRow"><span>الليبلات حسب التصنيف — لكل طبقة اختار الحقل (Subtype / FeatureType / أي حقل) وعلّم التصنيفات اللي يظهرلها ليبل (الرمز نفسه بيفضل في الرسم). أول سطر في الليبل بيتكتب من الحقل ده بدل اسم الطبقة</span><div id="cadLabTypes"></div><label class="ck small"><input type="checkbox" id="cadNoOverlap" checked><span>لو الليبل مالوش مكان فاضي ميتحطّش فوق ليبل تاني (بيتشال ويتقالك عددهم)</span></label></div>
+      <div class="row2" id="cadLogoRow" style="flex-wrap:wrap"><span class="small" style="width:100%">لوجوهات الجهات (اختياري) — بتتحط تحت بعض في الشريط وتحت كل لوجو مكان للختم:</span><label class="fld">1. المالك (مثلاً وزارة الإسكان)<input type="file" accept="image/png,image/jpeg" data-logo="owner"></label><label class="fld">2. شركة المياه / الأمانة<input type="file" accept="image/png,image/jpeg" data-logo="authority"></label><label class="fld">3. الاستشاري<input type="file" accept="image/png,image/jpeg" data-logo="consultant"></label><label class="fld">4. المقاول<input type="file" accept="image/png,image/jpeg" data-logo="contractor"></label></div>
+      <label class="fld" id="cadScaleRow">مقياس اللوحات (A1)<select id="cadScale"><option value="500">1:500 (زي لوحات الأز-بلت)</option><option value="1000">1:1000</option><option value="1250">1:1250</option><option value="2000">1:2000</option><option value="2500">1:2500</option><option value="5000">1:5000</option></select></label>
+      <div class="fld"><span>أنوتيشن جنب كل عنصر (سطور فوق بعض) — اختار الحقول</span><div id="cadAnnoList" class="cklist two"></div></div>
+      <label class="fld">ارتفاع نص الأنوتيشن (م)<input id="cadAnnoH" type="number" step="0.1" value="0.8"></label>
+    </div>
+    <div class="step"><b>3 · فلتر (اختياري)</b>
+      <div class="row3"><select id="expFField"></select><select id="expFOp"><option value="eq">=</option><option value="ne">≠</option><option value="gt">&gt;</option><option value="lt">&lt;</option><option value="has">فيه</option><option value="empty">فاضي</option><option value="notempty">مش فاضي</option></select><input id="expFVal" placeholder="القيمة"></div>
+      <label class="ck small"><input type="checkbox" id="expView"><span>العناصر اللي ظاهرة على الشاشة بس</span></label>
+    </div>
+    <div class="step"><b>4 · الحقول</b> <button class="chip" id="expAll">الكل</button> <button class="chip" id="expNone">ولا حاجة</button><div id="expFields" class="cklist two"></div>
+      <label class="fld">حقل الاسم/الليبل (لـ KML و DXF)<select id="expLabel"></select></label>
+      <label class="ck small"><input type="checkbox" id="expMerge"><span>ادمج الطبقات في طبقة واحدة</span></label>
+    </div>
+    <button class="open-btn" id="expGo" style="width:100%;justify-content:center">تحويل وتنزيل</button>
+  </div>
+</div>
+
+<div class="sheet tall" id="hubSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>الفريق والشغل الميداني</h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body" id="hubBody"></div>
+</div>
+
+<div class="sheet" id="pickSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2 id="pickTitle"></h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body" id="pickList"></div>
+</div>
+
+<div class="sheet tall" id="fbSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>نموذج رفع</h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body">
+    <label class="fld">اسم النموذج<input id="fbName" placeholder="مثلاً: فحص المحابس"></label>
+    <label class="fld">نوع العنصر<select id="fbGeom"><option value="point">نقطة</option><option value="line">خط</option><option value="polygon">مضلع</option></select></label>
+    <label class="fld">قارنه مع طبقة<select id="fbRef"></select></label>
+    <label class="fld">مسافة البحث عن العنصر (متر)<input id="fbTol" type="number" min="0.1" step="0.5"></label>
+    <div class="hub-h"><h3>الحقول</h3><button class="chip" id="fbImport">هات الحقول من الطبقة</button></div>
+    <p class="muted small">الحقل اللي اسمه زي اسم حقل في GIS هيتقارن بيه على طول.</p>
+    <div id="fbFields"></div>
+    <button class="chip" id="fbAdd">＋ حقل</button>
+    <div class="fb-foot"><button class="open-btn" id="fbSave">حفظ النموذج</button><button class="chip danger" id="fbDelete"></button></div>
+  </div>
+</div>
+
+<div class="sheet tall" id="recSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2 id="recTitle"></h2><button class="icon-btn" id="recCancel">✕</button></div>
+  <div class="sh-body">
+    <div id="recCmp" class="cmp"></div>
+    <div id="recFields"></div>
+    <p class="muted small" id="recInfo"></p>
+    <button class="open-btn" id="recSave" style="width:100%;justify-content:center">حفظ التسجيل</button>
+  </div>
+</div>
+<div id="syncOffer"><div id="syncOfferTxt"></div><div class="mp-btns"><button class="chip done" id="syncOfferYes">هات النسخة الأحدث</button><button class="chip" id="syncOfferNo">خلّي اللي هنا</button></div></div>
+<div class="sheet" id="saveSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>حفظ الشغل</h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body" id="saveBody">
+    <p style="margin:4px 0 2px;font-weight:600" id="saveStatus"></p>
+    <p class="muted small" id="saveWhere" style="margin:0 0 12px;line-height:1.6"></p>
+    <p class="muted small" style="line-height:1.6">بيتحفظ: الملفات المفتوحة، ألوانها وتلوينها حسب الحقول، الليبلز، نظام الإحداثيات اللي اخترته، الطبقات الظاهرة والمخفية، ومكان الخريطة. تسجيلات الفريق محفوظة لوحدها على طول.</p>
+    <label class="ck"><input type="checkbox" id="saveAuto"><span>حفظ تلقائي مع كل تغيير</span></label>
+    <div class="fb-foot"><button class="open-btn" id="saveNow">احفظ دلوقتي</button><button class="chip danger" id="saveClear">امسح الشغل المحفوظ</button></div>
+  </div>
+</div>
+<div class="sheet" id="toolsSheet">
+  <div class="grab"></div>
+  <div class="sh-head"><h2>الأدوات</h2><button class="icon-btn" data-close>✕</button></div>
+  <div class="sh-body">
+    <button class="chip main" id="btnResult" style="margin-bottom:6px">📦 آخر نتيجة: فين الداتا بيز وإيه اللي اتعمل</button>
+    <div class="tsec">مسارات الشغل</div>
+    <div class="tools">
+      <button class="tool flow" id="btnFlow"><span>🚀</span><b>من الكاد لـ GIS</b><small>فحص · جداول ← Excel · لايرات · سكيما · طوبولوجي</small></button>
+      <button class="tool flow2" id="btnGisFlow"><span>✅</span><b>فحص وتسليم داتا GIS</b><small>GDB/SHP: فحص · حل · مراجعة · تقرير · تصدير</small></button>
+    </div>
+    <div class="tsec">أدوات</div>
+    <div class="tools t3">
+      <button class="tool" id="btnExport"><span>⇄</span><b>تحويل وتصدير</b><small>GDB · SHP · كاد · KML</small></button>
+      <button class="tool" id="btnDash"><span>📊</span><b>تقرير وداشبورد</b><small>كميات · المطلوب منك</small></button>
+      <button class="tool ai" id="btnAI"><span>🧠</span><b>اسأل Claude</b><small>يبص على الداتا بنفسه</small></button>
+      <button class="tool" id="btnAttrSrc"><span>📎</span><b>بيانات من ملفات</b><small>Excel · PDF · صور ← Attributes</small></button>
+      <button class="tool" id="btnSaveT"><span>💾</span><b>حفظ ومزامنة</b><small>شغلك يظهر على اللابتوب والموبايل</small></button>
+      <button class="tool" id="btnTeam"><span>👷</span><b>الموقع والفريق</b><small>رفع ومقارنة</small></button>
+    </div>
+    <details class="adv"><summary>أدوات متقدمة (لو عايز تشغّل خطوة لوحدها)</summary>
+    <div class="tools t3">
+      <button class="tool" id="btnQC"><span>✔</span><b>فحص حر</b><small>تختار الطبقات والحدود</small></button>
+      <button class="tool" id="btnCadFix"><span>🛠</span><b>إصلاح الكاد</b><small>سكيل · سنابينج</small></button>
+      <button class="tool" id="btnOrg"><span>🗂</span><b>تنظيم الكاد</b><small>تسمية اللايرات</small></button>
+      <button class="tool" id="btnLeg"><span>🔑</span><b>ليجند الكاد</b><small>الرموز ووصفها ← تصنيف وبيانات</small></button>
+      <button class="tool" id="btnCT"><span>▦</span><b>جدول من الكاد</b><small>تحديد بإيدك ← Excel</small></button>
+      <button class="tool" id="btnWS"><span>🏗</span><b>بيئات العمل</b><small>سكيما لكل شبكة</small></button>
+    </div></details>
+  </div>
+</div>
+<div class="sheet" id="cadSheet"><div class="grab"></div><div class="sh-head"><h2>فحص الكاد<span class="sub" id="cadTitle"></span></h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="cadBody"></div></div>
+<div class="sheet tall" id="qcSheet"><div class="grab"></div><div class="sh-head"><h2>فحص الداتا</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body">
+  <div class="step"><b>1 · الطبقات ودور كل واحدة في الشبكة</b><div id="qcLayers" class="cklist" style="max-height:260px"></div></div>
+  <div class="step"><b>2 · الحدود المسموحة</b>
+    <div class="row2"><label class="fld">مسافة الاتصال (م)<input id="qcSnap" type="number" step="0.001" value="0.01"></label><label class="fld">مسافة "قريب ومش متوصل" (م)<input id="qcNear" type="number" step="0.1" value="1"></label></div>
+    <div class="row2"><label class="fld">أقل منسوب منطقي<input id="qcZmin" type="number" value="-50"></label><label class="fld">أعلى منسوب منطقي<input id="qcZmax" type="number" value="3000"></label></div></div>
+  <div class="step"><b>3 · الفحوصات</b>
+    <label class="ck"><input type="checkbox" id="qc_coord" checked><span>الإحداثيات (غير منطقية، (0,0)، بعيدة، حقول X/Y)</span></label>
+    <label class="ck"><input type="checkbox" id="qc_z" checked><span>المناسيب (Z، الأرض/القاع، العمق، الميل العكسي)</span></label>
+    <label class="ck"><input type="checkbox" id="qc_geom" checked><span>الهندسة (طول صفر، تكرار، سبايك، تقاطع ذاتي)</span></label>
+    <label class="ck"><input type="checkbox" id="qc_topo" checked><span>الطوبولوجي والاتصال (Dangles، مش متوصل، تداخل، تقاطع، أجزاء معزولة)</span></label>
+    <label class="ck"><input type="checkbox" id="qc_attr" checked><span>البيانات الوصفية (ناقص، متكرر، شاذ، الطول ≠ الحقيقي)</span></label>
+    <label class="ck"><input type="checkbox" id="qc_un"><span><b>موديول التجهيز للـ Utility Network</b> — مش جزء من فحص التسليم. شغّله بس لما تكون عايز تحوّل الداتا لـ UN (Asset Group/Type، Z، المصادر والـ Subnetworks)</span></label></div>
+  <div class="step"><b>قواعد الشبكة</b>
+    <label class="fld">نوع الشبكة<select id="qcNet"><option value="water">مياه</option><option value="sewer">صرف صحي</option><option value="storm">أمطار</option><option value="power">كهرباء</option><option value="lighting">إنارة</option><option value="telecom">اتصالات</option><option value="gas">غاز</option><option value="irrigation">ري</option></select></label>
+    <label class="ck"><input type="checkbox" id="qc_net" checked><span><b>القواعد الهندسية للشبكة</b> — مياه: المحابس على الخط، التوصيلات متوصلة، نهايات من غير طبة، تغيير قطر من غير مسلوب، مسافات المحابس · صرف/أمطار: الميل والميل العكسي، الغرف، العمق، القطر بيصغر، المسافات · كهرباء/إنارة: الكابل عند جهاز، أعمدة مش متوصلة، مجموعات من غير لوحة</span></label>
+    <label class="ck"><input type="checkbox" id="qc_netattr" checked><span><b>قواعد البيانات (Attributes) للشبكة</b> — الحقول المطلوبة لكل عنصر (القطر، المادة، مناسيب القاع والغطا، نوع المحبس، الجهد، ارتفاع العمود…) والقيم المسموحة والأقطار القياسية</span></label>
+  </div>
+  <div class="step"><b>4 · قواعدك (اللي مش هيتحسب خطأ)</b><div id="qcRules"></div></div>
+  <button class="open-btn" id="qcRun" style="width:100%;justify-content:center">ابدأ الفحص</button>
+</div></div>
+<div class="sheet panel" id="qcResSheet"><div class="grab"></div><div class="sh-head"><h2>نتائج الفحص</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="qcResBody"></div></div>
+<div class="sheet tall wide2" id="dashSheet"><div class="grab"></div><div class="sh-head"><h2>الداشبورد</h2><button class="chip" id="dashXlsx">تقرير Excel</button><button class="chip" id="dashHtml">تقرير HTML</button><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="dashBody"></div></div>
+<div class="sheet tall" id="wsSheet"><div class="grab"></div><div class="sh-head"><h2 id="wsTitle">بيئات العمل</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="wsBody"></div></div>
+<div class="sheet tall wide2" id="ctSheet"><div class="grab"></div><div class="sh-head"><h2>جدول من الكاد</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="ctBody"></div></div>
+<div class="sheet panel right" id="gflowSheet"><div class="grab"></div><div class="sh-head"><h2>✅ فحص وتسليم داتا GIS</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="gflowBody"></div></div>
+<div class="sheet tall" id="legSheet"><div class="grab"></div><div class="sh-head"><h2>🔑 ليجند الكاد</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="legBody"></div></div>
+<div class="sheet tall" id="resSheet"><div class="grab"></div><div class="sh-head"><h2>📦 النتيجة</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="resBody"></div></div>
+<div class="sheet tall" id="asrcSheet"><div class="grab"></div><div class="sh-head"><h2>📎 البيانات الوصفية من ملفات</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="asrcBody"></div></div>
+<div class="sheet panel right" id="flowSheet"><div class="grab"></div><div class="sh-head"><h2>🚀 من الكاد لـ GIS</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="flowBody"></div></div>
+<div class="sheet tall wide2" id="aiSheet"><div class="grab"></div><div class="sh-head"><h2>🧠 Claude يراجع الداتا</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="aiBody"></div></div>
+<div class="sheet tall" id="orgSheet"><div class="grab"></div><div class="sh-head"><h2>تنظيم الكاد وتسمية اللايرات</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="orgBody"></div></div>
+<div class="sheet tall" id="fixSheet"><div class="grab"></div><div class="sh-head"><h2 id="fixTitle">حل المشاكل أوتوماتيك</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="fixBody"></div></div>
+<div id="toast"></div>
+<div id="busy"><div class="spin"></div><div id="busyText">جاري الفتح…</div></div>
+
+<!--LIBS-->
+</body>
+</html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <script type="application/json" id="claude-artifacts-manifest">{"permissions": ["full-access"]}</script>
-<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v27";
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v28";
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").then(r=>{window.GV_SWR=r}).catch(()=>{});
 const gvApply=v=>{const go=()=>location.replace(location.pathname+"?u="+v);Promise.all([window.caches?caches.keys().then(k=>Promise.all(k.map(x=>caches.delete(x)))):0,window.GV_SWR?GV_SWR.update().catch(()=>{}):0]).then(go,go)};
 const gvBar=v=>{if(document.getElementById("gvUpd")||!document.body)return;const b=document.createElement("div");b.id="gvUpd";b.textContent="🔄 فيه تحديث جديد للبرنامج — دوس هنا عشان يتحدّث";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#1565c0;color:#fff;padding:12px 18px;border-radius:24px;font:600 15px system-ui;box-shadow:0 4px 16px #0006;cursor:pointer;direction:rtl;max-width:92vw;text-align:center";b.onclick=()=>{b.textContent="⏳ بيتحدّث...";gvApply(v)};document.body.appendChild(b)};
@@ -8749,7 +8749,7 @@ return ret;
       const now = el('button', 'chip', 'زامن دلوقتي'); now.onclick = async () => { await checkRemote(true); if (!$('#syncOffer').classList.contains('show')) saveNow(true); };
       const cp = el('button', 'chip', '📋 انسخ كود الربط لجهاز تاني'); cp.onclick = () => { const code = 'GVSYNC:' + btoa(JSON.stringify(g)); (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => GV.toast('اتنسخ — الصقه في نفس المكان على الجهاز التاني'), () => GV.askText ? GV.askText('انسخ الكود ده', code) : GV.showMsg(code)); };
       const off = el('button', 'chip danger', 'افصل المزامنة'); off.onclick = () => { GV.store.set('gv_ghsync', ''); cloud = null; seen.set(''); renderSaveSheet(); GV.toast('اتفصلت المزامنة على الجهاز ده (شغلك لسه موجود)'); };
-      row.append(now, cp, off); box.appendChild(row); return;
+      row.append(now, cp, off); box.appendChild(row); box.appendChild(wipeBtn()); return;
     }
     box.appendChild(el('div', 'muted small', 'الصق كود الربط (لو وصّلت جهاز قبل كده) أو اكتب اسم الريبو والتوكن:'));
     const inp = el('input'); inp.placeholder = 'كود الربط  أو  التوكن (github_pat_…)'; inp.style.cssText = 'width:100%;margin:6px 0;direction:ltr'; inp.autocomplete = 'off';
@@ -8764,7 +8764,25 @@ return ret;
       try { const t = ghCloud(cfg); await t.getMeta(); GV.store.set('gv_ghsync', JSON.stringify(cfg)); cloud = t; seen.set(''); msg.textContent = '✅ اتوصل'; GV.toast('✅ المزامنة اشتغلت'); await checkRemote(true); if (!$('#syncOffer').classList.contains('show')) saveNow(true); renderSaveSheet(); }
       catch (e) { msg.textContent = '❌ ' + (e.message || e); go.disabled = false; }
     };
-    box.append(inp, rp, go, msg);
+    box.append(inp, rp, go, msg, el('br'), wipeBtn());
+  }
+  // Wipe this device completely (e.g. before handing a work laptop back): nothing personal stays, the synced copy is untouched.
+  async function wipeDevice() {
+    for (const k of await ikeys()) await idel(k);
+    try { Object.keys(localStorage).forEach(k => localStorage.removeItem(k)); } catch (e) { }
+    try { sessionStorage.clear(); } catch (e) { }
+    try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch (e) { }
+    try { if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch (e) { }
+    try { indexedDB.deleteDatabase('gis-platform'); } catch (e) { }
+    location.replace(location.pathname + '?wiped=1');
+  }
+  let wipeArm = 0;
+  function wipeBtn() {
+    const armed = () => Date.now() - wipeArm < 8000;
+    const w = el('button', 'chip danger', armed() ? '⚠️ متأكد؟ هيمسح كل حاجة من الجهاز ده بس — دوس تاني' : '🧹 امسح كل حاجة من الجهاز ده (قبل تسليمه)'); w.style.marginTop = '8px';
+    w.title = 'بيمسح من الجهاز ده: الشغل المحفوظ، كود المزامنة، وكل الإعدادات. النسخة المتزامنة على حسابك بتفضل سليمة';
+    w.onclick = () => { if (!armed()) { wipeArm = Date.now(); w.textContent = '⚠️ متأكد؟ هيمسح كل حاجة من الجهاز ده بس — دوس تاني'; return; } wipeArm = 0; w.textContent = '⏳ بيمسح…'; restoring = true; clearTimeout(timer); wipeDevice(); };
+    return w;
   }
   setInterval(() => { if (!document.hidden && ghCfg()) checkRemote(); }, 90 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(checkRemote, 800); });
@@ -8791,10 +8809,9 @@ return ret;
     const b = $('#saveClear'); if (b.dataset.c !== '1') { b.dataset.c = '1'; b.textContent = 'متأكد؟ اضغط تاني'; return; }
     b.dataset.c = ''; b.textContent = 'امسح الشغل المحفوظ';
     for (const k of await ikeys()) await idel(k);
-    const c = await getCloud();
-    if (c) { try { await c.clear(); seen.set(''); } catch (e) { } }
+    seen.set(''); // local only: the copy synced to your other devices stays safe
     lastSaved = null; auto = false; GV.store.set('gv_autosave', '0'); setState('idle');
-    GV.toast('اتمسح الشغل المحفوظ، والحفظ التلقائي اتقفل');
+    GV.toast('اتمسح الشغل المحفوظ على الجهاز ده بس (النسخة المتزامنة سليمة)، والحفظ التلقائي اتقفل');
   });
   window.addEventListener('pagehide', () => { if (timer) { clearTimeout(timer); saveLocalOnly(); } });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && timer) { clearTimeout(timer); saveNow(); } });

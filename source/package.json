@@ -1,0 +1,24 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@mlightcad/libredwg-web": "^0.8.9",
+    "@tmcw/togeojson": "^7.1.4",
+    "dxf-parser": "^1.1.2",
+    "esbuild": "^0.28.2",
+    "fgdb": "^1.0.0",
+    "jszip": "^3.10.2",
+    "leaflet": "^1.9.4",
+    "proj4": "^2.23.0",
+    "shpjs": "^6.2.0",
+    "sql.js": "^1.17.0"
+  }
+}
