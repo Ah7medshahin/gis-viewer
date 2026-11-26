@@ -974,6 +974,8 @@ body.show-home .home-x{display:inline-block}
 .brand{cursor:pointer}
 
 .lg-bar{flex-wrap:wrap;align-items:center;gap:6px}.lg-bar input,.lg-bar select{flex:1 1 140px;max-width:none!important;min-width:0}.lg-bar>span,.lg-bar>b{white-space:nowrap}
+.sel-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px}
+.qc-filt{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}.qc-rev{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:2600;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:10px 12px;width:min(560px,94vw);display:flex;flex-direction:column;gap:8px}.qc-rev-h{display:flex;gap:10px;align-items:center}.qc-rev-h b{flex:1}
 .ctx-menu{position:fixed;z-index:3500;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:6px;min-width:220px;display:flex;flex-direction:column}.ctx-menu button{background:none;border:0;color:inherit;font:inherit;text-align:start;padding:9px 12px;border-radius:8px;cursor:pointer}.ctx-menu button:hover{background:var(--bg)}.ctx-menu .danger{color:var(--warn)}.ctx-h{font-weight:700;padding:6px 12px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}.ctx-sep{height:1px;background:var(--line);margin:4px 6px}
 .base-help{position:fixed;left:50%;bottom:calc(96px + var(--sb));transform:translateX(-50%);z-index:1200;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;gap:10px;align-items:center;max-width:92vw;box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:14px}.base-help .btn{white-space:nowrap}
 </style>
@@ -3598,7 +3600,7 @@ return ret;
   // attribute table
   let tblLayer = null, tblLimit = 200, tblOnly = null, tblNote = '';
   let tblSel = null;
-  function openTable(l, fromList, only, note) { tblLayer = l; tblLimit = 200; tblOnly = only && only.length ? new Set(only) : null; tblNote = tblOnly ? (note || '') : ''; $('#tblTitle').textContent = l.name; $('#tblSearch').value = ''; renderTable(); openSheet('#tblSheet', fromList ? { back: '#layerSheet' } : null); }
+  function openTable(l, fromList, only, note) { if (!GV._keepSelTabs) { const tb = document.getElementById('tblSelTabs'); if (tb) tb.remove(); } tblLayer = l; tblLimit = 200; tblOnly = only && only.length ? new Set(only) : null; tblNote = tblOnly ? (note || '') : ''; $('#tblTitle').textContent = l.name; $('#tblSearch').value = ''; renderTable(); openSheet('#tblSheet', fromList ? { back: '#layerSheet' } : null); }
   function renderTable() {
     const l = tblLayer; if (!l) return;
     const q = $('#tblSearch').value.trim().toLowerCase();
@@ -5640,6 +5642,28 @@ return ret;
     showResults(kept, GV.qcLast.cfg.sel); if (sc) requestAnimationFrame(() => { sc.scrollTop = st0; });
     GV.toast(yes ? 'تمام، اتسجلت كقاعدة واتشالت ' + q.items.length + ' ملاحظة' : 'تمام، اتعلّمت كأخطاء مؤكدة');
   }
+  const QF = { focus: false, layer: null };
+  // sample reviewer: up to 8 cases spread over the whole set, then one decision for the type
+  function review(p, fixAll, acceptAll, canFix) {
+    const its = p.items.filter(i => i.ll); if (!its.length) return GV.toast('المشكلة دي مالهاش مكان على الخريطة');
+    const n = Math.min(8, its.length); const smp = []; for (let k = 0; k < n; k++) smp.push(its[Math.floor(k * its.length / n)]);
+    let k = 0; let w = document.getElementById('qcRev'); if (w) w.remove(); w = el('div', 'qc-rev'); w.id = 'qcRev';
+    const head = el('div', 'qc-rev-h'); const ttl = el('b', null, p.title); const cnt = el('span', 'muted small'); const x = el('button', 'icon-btn', '✕'); x.onclick = () => w.remove(); head.append(ttl, cnt, x);
+    const det = el('div', 'small'); const nav = el('div', 'fc-acts');
+    const show = () => { const it = smp[k]; cnt.textContent = 'مثال ' + (k + 1) + ' من ' + n + ' (من ' + p.n.toLocaleString('en') + ')'; det.textContent = (it.layer || '') + (it.detail ? ' — ' + it.detail : ''); GV.map.setView([it.ll[1], it.ll[0]], 20); GV.markSel && GV.markSel(it.ll[1], it.ll[0]); };
+    const pv = el('button', 'chip', '◀ اللي قبله'); pv.onclick = () => { k = (k + n - 1) % n; show(); };
+    const nx = el('button', 'chip', 'اللي بعده ▶'); nx.onclick = () => { k = (k + 1) % n; show(); };
+    const op = el('button', 'chip', 'افتح العنصر'); op.onclick = () => { const it = smp[k]; if (it.lref && it.fi != null) GV.showFeature(it.lref, it.fi, L.latLng(it.ll[1], it.ll[0])); };
+    nav.append(pv, nx, op);
+    const dec = el('div', 'fc-acts'); dec.appendChild(el('span', 'muted small', 'القرار للنوع كله:'));
+    const ok = el('button', 'chip ok', '✓ مش أخطاء — عدّي الكل'); ok.onclick = () => { w.remove(); acceptAll(); };
+    dec.appendChild(ok);
+    if (canFix) { const fx = el('button', 'chip ok', '🛠 صلّح الكل'); fx.onclick = () => { w.remove(); fixAll(); }; dec.appendChild(fx); }
+    const keep = el('button', 'chip danger', '✗ أخطاء فعلًا — سيبها'); keep.onclick = () => { w.remove(); p.items.forEach(i => { i.confirmed = true; }); GV.toast('اتعلّموا كأخطاء مؤكدة — هتلاقيهم في طبقة المشاكل'); };
+    dec.appendChild(keep);
+    w.append(head, det, nav, dec); document.body.appendChild(w); show();
+    if (window.innerWidth < 760) { const sh = $('#qcResSheet'); if (sh) sh.classList.add('min'); }
+  }
   function renderSummary(issues) {
     const box = $('#qcResBody'); box.textContent = '';
     const probs = problems(issues); const qs = questions(issues);
@@ -5648,6 +5672,16 @@ return ret;
     [[real.filter(p => p.sev === 'err').length, 'مشكلة لازم تتحل', '#e03131'], [real.filter(p => p.sev === 'warn').length, 'تحذير', '#f08c00'], [qs.length, 'سؤال محتاج إجابتك', '#1c7ed6']].forEach(([v, t, c]) => { const d = el('div', 'kpi'); d.style.setProperty('--kc', c); d.append(el('b', null, v.toLocaleString('en')), el('span', null, t)); top.appendChild(d); });
     box.appendChild(top);
     box.appendChild(el('p', 'muted small', 'اتجمعت ' + issues.length.toLocaleString('en') + ' ملاحظة في ' + probs.length + ' مشكلة حسب سببها ومكانها' + (GV.qcDropped ? '، واتشال ' + GV.qcDropped + ' ملاحظة بسبب قواعدك' : '') + '.'));
+    { // working on big volumes: focus on what blocks delivery, filter by layer
+      const tb = el('div', 'qc-filt');
+      const fc = el('button', 'chip' + (QF.focus ? ' on' : ''), (QF.focus ? '✓ ' : '') + '🎯 اللي بيعطّل التسليم بس'); fc.title = 'اخفي التحذيرات والملاحظات واعرض الأخطاء بس'; fc.onclick = () => { QF.focus = !QF.focus; renderSummary(issues); };
+      tb.appendChild(fc);
+      const infos = probs.filter(p => p.sev === 'info'); if (infos.length) { const ai = el('button', 'chip', '✓ عدّي كل الملاحظات (' + infos.reduce((a, p) => a + p.n, 0) + ')'); ai.title = 'الملاحظات (info) مش بتعطّل التسليم: تتشال مرة واحدة وتتحفظ كقاعدة'; ai.onclick = () => { infos.forEach(p => RULES.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), kind: 'ignore', layer: p.layer || '*', issue: p.type, from: 'تجاهل الملاحظات' })); saveRules(); answer({ items: [], rule: null, key: '' }, false); }; tb.appendChild(ai); }
+      const lc = new Map(); probs.forEach(p => { if (p.layer) lc.set(p.layer, (lc.get(p.layer) || 0) + p.n); });
+      if (lc.size > 1) { const all = el('button', 'chip' + (!QF.layer ? ' on' : ''), 'كل الطبقات'); all.onclick = () => { QF.layer = null; renderSummary(issues); }; tb.appendChild(all);
+        [...lc.entries()].sort((a, b) => b[1] - a[1]).forEach(([ln, n]) => { const c = el('button', 'chip' + (QF.layer === ln ? ' on' : ''), ln + ' (' + n.toLocaleString('en') + ')'); c.onclick = () => { QF.layer = QF.layer === ln ? null : ln; renderSummary(issues); }; tb.appendChild(c); }); }
+      box.appendChild(tb);
+    }
     const unErr = issues.filter(i => (i.cat === 'un' || i.cat === 'topo') && i.sev === 'err').length;
     if ($('#qc_un').checked) { const r = el('div', 'cmp'); r.style.setProperty('--sc', unErr ? '#e03131' : '#2f9e44'); r.appendChild(el('b', null, unErr ? 'مش جاهزة للـ Utility Network: ' + unErr + ' مكان لازم يتصلح' : 'جاهزة للـ Utility Network من ناحية الاتصال والهندسة ✓')); if (GV.qcComponents != null) r.appendChild(el('div', 'small', 'الشبكة متقسمة لـ ' + GV.qcComponents + ' جزء منفصل')); box.appendChild(r); }
     if (GV.fixBefore) { const cmp = el('div', 'cmp'); const b = GV.fixBefore, aE = issues.filter(i => i.sev === 'err').length, aW = issues.filter(i => i.sev === 'warn').length; cmp.style.setProperty('--sc', '#2f9e44'); cmp.appendChild(el('b', null, 'بعد الحل التلقائي: الأخطاء ' + b.err + ' ← ' + aE + ' · التحذيرات ' + b.warn + ' ← ' + aW)); box.appendChild(cmp); GV.fixBefore = null; }
@@ -5669,7 +5703,7 @@ return ret;
     if (!issues.length) { box.appendChild(el('p', 'ok-note', '✓ مفيش مشاكل في الفحوصات اللي اخترتها.')); }
     const SEVN = { err: 'خطأ', warn: 'تحذير', info: 'ملاحظة' };
     [['err', 'المشاكل اللي لازم تتحل'], ['warn', 'تحذيرات تراجعها'], ['info', 'ملاحظات']].forEach(([sv, title]) => {
-      const ps = probs.filter(p => p.sev === sv); if (!ps.length) return;
+      if (QF.focus && sv !== 'err') return; const ps = probs.filter(p => p.sev === sv && (!QF.layer || p.layer === QF.layer)); if (!ps.length) return;
       const sec = el('div', 'step'); sec.appendChild(el('b', null, title + ' (' + ps.length + ')'));
       ps.forEach(p => {
         const r = el('div', 'prob');
@@ -5687,6 +5721,7 @@ return ret;
         if (/بدل كود/.test(p.type)) { const cb = el('button', 'chip ok', '🛠 حوّل كل النصوص لأكواد (الدومين / Subtype)'); cb.onclick = () => { const n = GV.domainConvert(); r.classList.add('gone'); GV.toast('اتحولت ' + n + ' قيمة لكود — اعمل فحص تاني عشان تتأكد', 5000); }; acts.appendChild(cb); }
         if (fk && GV.openFix) { const fxb = el('button', 'chip ok', '🛠 صلّح النوع ده كله (' + p.n + ')'); fxb.title = 'نفس الحل بيتطبق على كل الأماكن اللي من النوع ده، وتقدر تتراجع'; fxb.onclick = () => { r.classList.add('gone'); GV.openFix({ only: [fk] }); }; acts.appendChild(fxb); }
         const ig = el('button', 'chip', '✓ تمام — عدّي النوع ده كله'); ig.onclick = () => { r.classList.add('gone'); if (GV.qcLayer) GV.qcLayer.features.forEach(f => { if (f.properties['المشكلة'] === p.type && (!p.layer || f.properties['الطبقة'] === p.layer)) f.properties['الحالة'] = 'مقبول'; }); RULES.push({ id: Date.now().toString(36), kind: 'ignore', layer: p.layer || '*', issue: p.type, from: 'تجاهل' }); saveRules(); answer({ items: [] , rule: null, key: '' }, false); };
+        if (p.n > 1) { const rv = el('button', 'chip', '👁 راجع عينة (' + Math.min(8, p.n) + ')'); rv.title = 'شوف أمثلة متفرقة واحد ورا التاني، وبعدها خد قرار واحد للنوع كله'; rv.onclick = () => review(p, () => { const fb = [...acts.querySelectorAll('button')].find(b => /صلّح النوع/.test(b.textContent)); if (fb) fb.click(); }, () => ig.onclick(), !!fk); acts.appendChild(rv); }
         acts.append(go, tb, ig); det.appendChild(acts);
         r.appendChild(det); head.onclick = () => r.classList.toggle('open');
         sec.appendChild(r);
@@ -8502,7 +8537,7 @@ return ret;
   const bMove = B('move', '✥', 'تحريك العناصر المحددة: اسحب من أي مكان على الخريطة');
   const bVtx = B('vertex', '⌁', 'تعديل الرؤوس: اسحب أي رأس للعنصر المحدد (دبل كليك على رأس يمسحه)');
   const bSnap = B('snap', '🧲', 'السناب على رؤوس ونقط الطبقات الظاهرة'); bSnap.classList.add('on');
-  const bDel = B('del', '🗑', 'مسح المحدد'); const bUndo = B('undo', '↶', 'تراجع (Ctrl+Z)'); const bTbl = B('tbl', '☰', 'بيانات المحدد في الجدول');
+  const bDel = B('del', '🗑', 'مسح المحدد'); const bUndo = B('undo', '↶', 'تراجع (Ctrl+Z)'); const bTbl = B('tbl', '📋', 'أتربيوت المحدد');
   const info = el('span', 'edinfo', 'مفيش تحديد'); bar.appendChild(info);
   const bOff = B('off', '✕', 'اقفل شريط التحرير');
   document.body.appendChild(bar);
@@ -8551,7 +8586,7 @@ return ret;
     Object.keys(pr).forEach(k => { const K = k.toUpperCase(); if (st && /^(X|XCOORDINATE|X_COORDINATES?|EASTING|POINT_X|STARTXCOORDINATE|START_X_COORDINATES_?)$/.test(K)) pr[k] = +st[0].toFixed(4); else if (st && /^(Y|YCOORDINATE|Y_COORDINATES?|NORTHING|POINT_Y|STARTYCOORDINATE|START_Y_COORDINATES_?)$/.test(K)) pr[k] = +st[1].toFixed(4); else if (en && /^(ENDXCOORDINATE|END_X_COORDINATES_?)$/.test(K)) pr[k] = +en[0].toFixed(4); else if (en && /^(ENDYCOORDINATE|END_Y_COORDINATES_?)$/.test(K)) pr[k] = +en[1].toFixed(4); }); }
 
   // ---------- clicks ----------
-  GV.editClick = (l, i, ev) => { if (!on || tool !== 'select' && tool !== 'vertex') return false; L.DomEvent.stopPropagation(ev); toggle(l, i, ev.originalEvent && ev.originalEvent.shiftKey); if (tool === 'select' && sel.length === 1) GV.showFeature(l, i, ev.latlng); return true; };
+  GV.editClick = (l, i, ev) => { if (on && (tool === 'box' || tool === 'move')) { L.DomEvent.stopPropagation(ev); return true; } if (!on || tool !== 'select' && tool !== 'vertex') return false; L.DomEvent.stopPropagation(ev); toggle(l, i, ev.originalEvent && ev.originalEvent.shiftKey); if (tool === 'select' && sel.length === 1) GV.showFeature(l, i, ev.latlng); else if (tool === 'select' && sel.length > 1) showTbl(true); return true; };
   map.on('click', () => { if (on && tool === 'select' && sel.length) clearSel(); });
 
   // ---------- box select & move (drag on the map) ----------
@@ -8570,7 +8605,7 @@ return ret;
     if (!drag) return; const d = drag; drag = null;
     if (tool === 'box') { const bb = boxR.getBounds(); map.removeLayer(boxR); boxR = null; if (!d.add) sel = [];
       visLayers().forEach(l => l.features.forEach((f, i) => { if (!f.wgs || f._sym) return; let hit = false; eachC(f.wgs.geometry, c => { if (!hit && bb.contains([c[1], c[0]])) hit = true; }); if (hit && !sel.some(s => s.l === l && s.i === i)) sel.push({ l, i }); }));
-      drawHL(); GV.toast(sel.length + ' عنصر اتحدد'); }
+      drawHL(); GV.toast(sel.length + ' عنصر اتحدد'); if (sel.length) showTbl(true); }
     else if (tool === 'move' && d.d) { const [dx, dy] = d.d; d.before.forEach(o => { const f = o.l.features[o.i]; if (f.wgs) setGeomFromWgs(o.l, f, GV.mapCoords(f.wgs.geometry, c => [c[0] + dx, c[1] + dy])); }); undoSt.push({ kind: 'geom', items: d.before }); refresh(d.before.map(o => o.l)); GV.toast('اتحرك ' + d.before.length + ' عنصر' + (snap ? ' (بالسناب)' : '')); }
   });
 
@@ -8589,15 +8624,26 @@ return ret;
 
   // ---------- delete / undo / table ----------
   function delSel() { if (!sel.length) return GV.toast('مفيش تحديد'); if (sel.some(s => !editable(s.l))) return GV.toast('فيه عنصر من ملف أصلي (للقراية بس) — اشتغل على نسخة الشغل');
-    if (!confirm('تمسح ' + sel.length + ' عنصر؟ (تقدر تتراجع بـ ↶)')) return;
     const by = new Map(); sel.forEach(s => { if (!by.has(s.l)) by.set(s.l, []); by.get(s.l).push(s.i); }); const rec = [];
     by.forEach((ix, l) => { ix.sort((a, b) => b - a).forEach(i => { rec.push({ l, i, f: l.features[i] }); l.features.splice(i, 1); }); });
-    undoSt.push({ kind: 'del', items: rec }); sel = []; refresh([...by.keys()]); GV.renderLayers && GV.renderLayers(); GV.toast('اتمسح ' + rec.length + ' عنصر'); }
+    undoSt.push({ kind: 'del', items: rec }); sel = []; refresh([...by.keys()]); GV.renderLayers && GV.renderLayers(); GV.toast('اتمسح ' + rec.length + ' عنصر — لو غلط دوس ↶ أو Ctrl+Z'); }
   function undo() { const u = undoSt.pop(); if (!u) return GV.toast('مفيش حاجة أتراجع عنها');
     if (u.kind === 'geom') u.items.forEach(o => { const f = o.l.features[o.i]; if (f) { f.geometry = o.g; f.wgs = o.w; if (o.p) f.properties = o.p; } });
     else u.items.slice().reverse().forEach(o => o.l.features.splice(o.i, 0, o.f));
     refresh(u.items.map(o => o.l)); GV.renderLayers && GV.renderLayers(); GV.toast('اتراجعت'); }
-  function showTbl() { if (!sel.length) return GV.toast('مفيش تحديد'); const l = sel[0].l; GV.openTable(l); setTimeout(() => { const s = $('#tblSearch'); if (s && sel.length === 1) { const p = l.features[sel[0].i].properties || {}; const k = Object.keys(p).find(k2 => /^(objectid|fid|globalid)$/i.test(k2)); if (k) { s.value = String(p[k]); s.dispatchEvent(new Event('input')); } } }, 60); }
+  // attributes of the current selection: one item → the feature panel; several → the table filtered to the selection,
+  // with a tab per layer when the selection spans several layers
+  function showTbl(quiet) {
+    if (!sel.length) { if (!quiet) GV.toast('مفيش تحديد'); return; }
+    if (sel.length === 1) { const { l, i } = sel[0]; const f = l.features[i]; let ll = null; try { ll = L.geoJSON(f.wgs).getBounds().getCenter(); } catch (e) { } GV.showFeature(l, i, ll); return; }
+    const by = new Map(); sel.forEach(x => { if (!by.has(x.l)) by.set(x.l, []); by.get(x.l).push(x.i); });
+    const open = l => {
+      GV._keepSelTabs = true; GV.openTable(l, false, by.get(l), 'المحدد'); GV._keepSelTabs = false;
+      let tb = document.getElementById('tblSelTabs'); if (tb) tb.remove();
+      if (by.size > 1) { tb = el('div', 'sel-tabs'); tb.id = 'tblSelTabs'; by.forEach((ix, l2) => { const c = el('button', 'chip' + (l2 === l ? ' on' : ''), l2.name + ' (' + ix.length + ')'); c.onclick = () => open(l2); tb.appendChild(c); }); const cnt = $('#tblCount'); if (cnt) cnt.parentNode.insertBefore(tb, cnt); }
+    };
+    open(sel[0].l);
+  }
 
   GV.editSel = () => sel.slice();
 })();
