@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <script type="application/json" id="claude-artifacts-manifest">{"permissions": ["full-access"]}</script>
-<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v25";
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v26";
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").then(r=>{window.GV_SWR=r}).catch(()=>{});
 const gvApply=v=>{const go=()=>location.replace(location.pathname+"?u="+v);Promise.all([window.caches?caches.keys().then(k=>Promise.all(k.map(x=>caches.delete(x)))):0,window.GV_SWR?GV_SWR.update().catch(()=>{}):0]).then(go,go)};
 const gvBar=v=>{if(document.getElementById("gvUpd")||!document.body)return;const b=document.createElement("div");b.id="gvUpd";b.textContent="🔄 فيه تحديث جديد للبرنامج — دوس هنا عشان يتحدّث";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#1565c0;color:#fff;padding:12px 18px;border-radius:24px;font:600 15px system-ui;box-shadow:0 4px 16px #0006;cursor:pointer;direction:rtl;max-width:92vw;text-align:center";b.onclick=()=>{b.textContent="⏳ بيتحدّث...";gvApply(v)};document.body.appendChild(b)};
@@ -3364,6 +3364,7 @@ return ret;
     lastOpen = id;
     const sh = $(id); sh.classList.add('open'); mkResize.z = (mkResize.z || 1002) + 1; sh.style.zIndex = mkResize.z; // the window you just opened is always on top
     const isF = !/^#(crsSheet|msgSheet|pickSheet|saveSheet)$/.test(id); // every window floats: move, resize, minimise; the map stays usable
+    if (!isF) sh.style.zIndex = 3000 + mkResize.z; // modal windows sit above the dimmed background, never under it
     if (isF && !sh.querySelector('.min-btn')) { const mb = el('button', 'icon-btn min-btn', '▁'); mb.title = 'صغّر / كبّر'; mb.addEventListener('click', () => { sh.classList.toggle('min'); mb.textContent = sh.classList.contains('min') ? '▢' : '▁'; }); const hd = sh.querySelector('.sh-head'); const cl = hd && hd.querySelector('[data-close]'); if (hd) hd.insertBefore(mb, cl || null); }
     if (isF) sh.classList.remove('min');
     if (isF && !sh.querySelector('.rz')) mkResize(sh);
