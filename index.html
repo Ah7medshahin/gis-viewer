@@ -9060,7 +9060,7 @@ return ret;
     { id: 'G_FLOWHEAD', nets: ['sewer', 'storm'], sev: 'err', t: 'سريان من اتجاهين بيتقابل ومفيش خروج', d: 'ماسورتين أو أكتر داخلين على نقطة ومفيش ولا ماسورة خارجة منها (ومش مخرج/محطة رفع) — غالبًا واحدة منهم معكوسة', src: 'our' },
     { id: 'G_FLOWOUT', nets: ['sewer', 'storm'], sev: 'warn', t: 'السريان مش بيوصل لمخرج الشبكة', d: 'لو مشيت مع اتجاه السريان من الماسورة دي بتقف عند نهاية تانية غير المخرج الرئيسي للشبكة', src: 'our' },
     { id: 'H_BACKFLOW', nets: ['sewer', 'storm'], sev: 'err', t: 'ارتداد: المنسوب اللي بيستقبل أعلى من اللي بيصب فيه', d: 'في اتجاه السريان كل نقطة لازم تكون أوطى من اللي جاية منها: منهول ← واي ← منهول، IC/كلين أوت ← الخط الرئيسي، كاتش بيزن ← المنهول', src: 'our' },
-    { id: 'H_FLAT', def: false, nets: ['sewer', 'storm'], sev: 'warn', t: 'منسوبين متساويين في اتجاه السريان (ميل صفر)', d: 'المنسوب اللي جاي منه السريان زي اللي رايح له بالظبط', src: 'our' },
+    { id: 'H_FLAT', nets: ['sewer', 'storm'], sev: 'err', t: 'ميل صفر في شبكة جاذبية', d: 'المنسوب اللي جاي منه السريان زي اللي رايح له بالظبط — في الصرف والسيول لازم يكون فيه ميل (قرار أحمد)', src: 'our' },
     { id: 'G_DIACHG', nets: ['sewer', 'storm'], sev: 'warn', t: 'تغيير قطر في نص الخط من غير غرفة', d: 'خطين ورا بعض بقطرين مختلفين ومفيش غرفة بينهم', src: 'gulfS' },
     { id: 'ST_MINDIA', def: false, nets: ['storm'], sev: 'info', t: 'قطر خط الأمطار أقل من الحد الأدنى', d: 'رئيسي < 600 مم أو فرعي < 450 مم (دليل جدة) — مقفولة: المشروع مش ماشي على دليل جدة', src: 'jed' },
     { id: 'W_HYDVALVE', nets: ['water'], sev: 'warn', t: 'فرعة حنفية الحريق مفيهاش محبس عزل', d: 'الحنفية بتتوصل بفرعة عليها محبس (Hydrant with service and valve)', src: 'esriW' },
@@ -9135,14 +9135,15 @@ return ret;
       const nm = p => p ? (NAME[p.el] || 'النقطة') : 'الخط';
       const R1 = Math.max(tol, 0.5); const seen = new Set();
       const cmp = (up, dn, upName, dnName, x, ctx) => { if (up == null || dn == null) return; const key = x.l.name + '#' + x.fi + '#' + ctx; if (seen.has(key)) return; seen.add(key);
-        if (dn > up + 0.005) { if (on('H_BACKFLOW')) R('H_BACKFLOW', x, dnName + ' (' + dn.toFixed(2) + ') أعلى من ' + upName + ' (' + up.toFixed(2) + ') بـ ' + ((dn - up) * 100).toFixed(0) + ' سم — هيحصل ارتداد'); }
-        else if (Math.abs(dn - up) <= 0.005 && on('H_FLAT')) R('H_FLAT', x, upName + ' = ' + dnName + ' = ' + up.toFixed(2)); };
+        if (dn > up + 0.001) { if (on('H_BACKFLOW')) R('H_BACKFLOW', x, dnName + ' (' + dn.toFixed(2) + ') أعلى من ' + upName + ' (' + up.toFixed(2) + ') بـ ' + ((dn - up) * 100).toFixed(0) + ' سم — هيحصل ارتداد'); }
+        else if (Math.abs(dn - up) <= 0.001 && on('H_FLAT')) R('H_FLAT', x, upName + ' = ' + dnName + ' = ' + up.toFixed(3) + ' — مفيش ميل'); };
       // 1) mains: node → node along the digitized flow (manhole → wye → manhole), using the points' inverts, else the pipe's own end levels
       L.filter(x => x.el === 'MAIN').forEach(m => {
         const a = m.c[0], b = m.c[m.c.length - 1]; const pa = ptNear(a, R1, p => ptIL(p) != null && /^(MHOL|INSP|CLNO|FITT|OUTF)$/.test(p.el || '')), pb = ptNear(b, R1, p => ptIL(p) != null && /^(MHOL|INSP|CLNO|FITT|OUTF)$/.test(p.el || ''));
         const up = pa ? ptIL(pa.p) : lnIL(m, 0), dn = pb ? ptIL(pb.p) : lnIL(m, 1);
         cmp(up, dn, pa ? nm(pa.p) + ' اللي جاي منه السريان' : 'أول الماسورة', pb ? nm(pb.p) + ' اللي بعده' : 'آخر الماسورة', m, 'main');
       });
+      if (on('H_FLAT')) L.filter(x => x.el === 'MAIN' || x.el === 'SERV').forEach(x => { const pr = x.f.properties || {}; const k = kOf(pr, RX.slope); const v = k ? nv(pr[k]) : null; if (v === 0) { const key = x.l.name + '#' + x.fi + '#slope'; if (!seen.has(key)) { seen.add(key); R('H_FLAT', x, 'حقل ' + k + ' = 0'); } } });
       // 2) laterals / connection lines: the end on the main or the manhole is downstream; the house side (IC / clean-out) or the catch basin is upstream
       L.filter(x => x.el !== 'MAIN' && x.el !== 'FORC').forEach(s => {
         const e = [s.c[0], s.c[s.c.length - 1]];
