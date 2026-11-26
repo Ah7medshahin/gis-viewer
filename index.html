@@ -5439,6 +5439,23 @@ return ret;
   GV.domainConvert = layers => { let n = 0; const undo = []; (layers || GV.sources.flatMap(s => s.layers)).forEach(l => { const D = domInfo(l); if (!D) return; const defs = D.domainDefs || {}; const jobs = []; if (D.subtypes) jobs.push({ field: D.subtypes.field, list: D.subtypes.list }); Object.keys(D.domains || {}).forEach(f => { const dd = defs[D.domains[f]]; if (dd && dd.codes) jobs.push({ field: f, list: dd.codes }); });
       jobs.forEach(j => l.features.forEach(f => { const pr = f.properties || {}; const fk = Object.keys(pr).find(k => k.toLowerCase() === j.field.toLowerCase()); if (!fk) return; const v = pr[fk]; if (v == null || String(v).trim() === '') return; const m = domMatch(j.list, v); if (m && !m.ok) { undo.push({ pr, fk, v }); pr[fk] = m.code; n++; } })); });
     GV.domainUndo = undo; if (GV.onDirty) GV.onDirty(); return n; };
+  // values that match nothing in the domain (a district name, a hand-typed diameter…) become NEW entries of that domain,
+  // and the features get the new code. New entries are logged (GV.domainAdded) so they can be added to the delivery GDB.
+  GV.domainAddNew = layers => { let n = 0; const undo = []; const added = GV.domainAdded = GV.domainAdded || [];
+    (layers || GV.sources.flatMap(s => s.layers)).forEach(l => { const D = domInfo(l); if (!D) return; const defs = D.domainDefs || {}; const jobs = [];
+      if (D.subtypes) jobs.push({ field: D.subtypes.field, list: D.subtypes.list, dn: 'Subtype' });
+      Object.keys(D.domains || {}).forEach(f => { const dd = defs[D.domains[f]]; if (dd && dd.codes) jobs.push({ field: f, list: dd.codes, dn: dd.name }); });
+      jobs.forEach(j => {
+        const numCodes = j.list.length && j.list.every(c => typeof c.code === 'number' || /^-?\d+$/.test(String(c.code)));
+        const sameAsName = numCodes && j.list.filter(c => String(+c.code) === String(parseFloat(c.name))).length >= j.list.length / 2; // diameter-like: code = value
+        l.features.forEach(f => { const pr = f.properties || {}; const fk = Object.keys(pr).find(k => k.toLowerCase() === j.field.toLowerCase()); if (!fk) return; const v = pr[fk]; if (v == null || String(v).trim() === '') return;
+          let m = domMatch(j.list, v); if (m && m.ok) return;
+          if (!m) { const txt = String(v).trim(); let code;
+            if (sameAsName && (txt.match(/\d+(?:\.\d+)?/) || [])[0]) code = +(txt.match(/\d+(?:\.\d+)?/) || [])[0];
+            else if (numCodes) code = Math.max(0, ...j.list.map(c => +c.code)) + 1; else code = txt;
+            const name = sameAsName ? String(code) : txt; j.list.push({ code, name }); added.push({ layer: l.name, field: fk, domain: j.dn, code, name }); m = { code }; }
+          undo.push({ pr, fk, v }); pr[fk] = m.code; n++; }); }); });
+    GV.domainUndo = undo; if (GV.onDirty) GV.onDirty(); return n; };
   GV.domainUndoFn = () => { (GV.domainUndo || []).forEach(u => { u.pr[u.fk] = u.v; }); const n = (GV.domainUndo || []).length; GV.domainUndo = null; return n; };
   function attrChecks(l, add, proj, KX, KY) {
     const fields = GV.fieldsOf(l).filter(k => !/^(objectid|fid|oid|shape|shape_length|shape_area|globalid|Text|Rotation|Height|Entity|Color|Layer|Block)$/i.test(k));
@@ -5677,6 +5694,7 @@ return ret;
     const rev = [['الطبقة', 'OBJECTID', 'الحقل', 'القيمة', 'الملاحظة', 'التفاصيل', 'Longitude', 'Latitude']];
     notes.filter(i => !/فاضي|ناقصة/.test(i.type)).forEach(i => { const f = i.lref && i.fi != null ? i.lref.features[i.fi] : null; const m = i.meta || {}; const fld = m.field || ''; const v = f && fld ? (f.properties || {})[fld] : (m.value != null ? m.value : ''); rev.push([i.layer || '', f ? idOf(f, i.fi) : '', fld, v == null ? '' : v, i.type, i.detail || '', i.ll ? +i.ll[0].toFixed(7) : '', i.ll ? +i.ll[1].toFixed(7) : '']); });
     sheets.push({ name: 'داتا محتاجة مراجعة', rows: rev });
+    if (GV.domainAdded && GV.domainAdded.length) sheets.push({ name: 'تصنيفات دومين جديدة', rows: [['الطبقة', 'الحقل', 'الدومين', 'الكود الجديد', 'الوصف']].concat(GV.domainAdded.map(a => [a.layer, a.field, a.domain, a.code, a.name])) });
     const data = await GV.xlsx(sheets);
     await GV.saveFile('Attribute_Notes_' + new Date().toISOString().slice(0, 10) + '.xlsx', data);
   }
@@ -5766,6 +5784,7 @@ return ret;
         const tb = el('button', 'chip', 'الجدول'); tb.onclick = () => { if (GV.qcLayer) { GV.openTable(GV.qcLayer); setTimeout(() => { $('#tblSearch').value = p.type; $('#tblSearch').dispatchEvent(new Event('input')); }, 50); } };
         const FIXMAP = [[/متكرر/, 'dup'], [/طوله صفر|طول صفر/, 'zero'], [/سبايك|رؤوس مكررة|vertex مكرر/, 'vtx'], [/Multipart/i, 'multi'], [/فجوة|طرف خط (مش|مو) متوصل|معلق|undershoot|overshoot|dangl/i, 'snapEnd'], [/قريبة من الخط|مش عليه|بعيدة عن الخط/, 'snapPt'], [/من غير vertex|مش على vertex/, 'vertex'], [/مش مقسوم|مش متقسم|من غير تقسيم|الخط عدّى على/, 'splitDev'], [/تقاطع/, 'split'], [/مسافات زيادة|كتابة مختلفة|توحيد/, 'attr'], [/US_MH|DS_MH|SLOPE|DEPTH|فاضي.*محسوب|ACTUALLENGTH/, 'derive']];
         const fk = (FIXMAP.find(m => m[0].test(p.type + ' ' + p.title)) || [])[1];
+        if (/مش موجودة في الدومين|مش من الـ Subtypes/.test(p.type)) { const nb = el('button', 'chip ok', '➕ ضيف القيم دي للدومين كتصنيفات جديدة وحوّلها لأكواد'); nb.title = 'كل قيمة مكتوبة ومش موجودة (زي اسم حي أو قطر) بتتضاف للدومين بكود جديد، وتقدر تتراجع'; nb.onclick = () => { const before = (GV.domainAdded || []).length; const n = GV.domainAddNew(); const nw = (GV.domainAdded || []).slice(before); r.classList.add('gone'); GV.toast('اتضاف ' + nw.length + ' تصنيف جديد واتحولت ' + n + ' قيمة لكود — هتلاقي القايمة في ملف Excel الداتا الوصفية', 5000); }; acts.appendChild(nb); }
         if (/بدل كود/.test(p.type)) { const cb = el('button', 'chip ok', '🛠 حوّل كل النصوص لأكواد (الدومين / Subtype)'); cb.onclick = () => { const n = GV.domainConvert(); r.classList.add('gone'); GV.toast('اتحولت ' + n + ' قيمة لكود — اعمل فحص تاني عشان تتأكد', 5000); }; acts.appendChild(cb); }
         if (fk && GV.openFix) { const fxb = el('button', 'chip ok', '🛠 صلّح النوع ده كله (' + p.n + ')'); fxb.title = 'نفس الحل بيتطبق على كل الأماكن اللي من النوع ده، وتقدر تتراجع'; fxb.onclick = () => { r.classList.add('gone'); GV.openFix({ only: [fk] }); }; acts.appendChild(fxb); }
         const ig = el('button', 'chip', '✓ تمام — عدّي النوع ده كله'); ig.onclick = () => { r.classList.add('gone'); if (GV.qcLayer) GV.qcLayer.features.forEach(f => { if (f.properties['المشكلة'] === p.type && (!p.layer || f.properties['الطبقة'] === p.layer)) f.properties['الحالة'] = 'مقبول'; }); RULES.push({ id: Date.now().toString(36), kind: 'ignore', layer: p.layer || '*', issue: p.type, from: 'تجاهل' }); saveRules(); answer({ items: [] , rule: null, key: '' }, false); };
@@ -8843,7 +8862,8 @@ return ret;
     slope: /^(slope|slope_?percent|slope_?pct|gradient)$/i,
     pg: /^(ground_?elevation|groundelevation|ground_?level|cover_?level|cover|cl|gl|rim(_?level)?|rim_?elevation)$/i,
     pi: /^(elevation|invert_?level|invert|il|inv|invert_?elevation|bottom_?elevation)$/i,
-    pd: /^(depth|mh_?depth|manhole_?depth)$/i
+    pd: /^(depth|mh_?depth|manhole_?depth)$/i,
+    drop: /^(drop|drop_?height|drop_?level|dropheight|drop_?depth|backdrop)$/i
   };
   const keyOf = (p, re) => Object.keys(p).find(k => re.test(k));
   const num = v => { if (v == null || v === '') return null; const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : null; };
@@ -8866,11 +8886,14 @@ return ret;
     const L = lenOf(f); if (L != null) n += setV(p, RE.len, L, log);
     const e = ends(f);
     if (e) { // levels from the structures at both ends
-      [[e[0], RE.sg, RE.si], [e[1], RE.eg, RE.ei]].forEach(([c, rg, ri]) => {
+      [[e[0], RE.sg, RE.si, 's'], [e[1], RE.eg, RE.ei, 'e']].forEach(([c, rg, ri, side]) => {
         const pt = pointAt(c, 0.5); if (!pt) return; const pp = pt.f.properties || {};
         if (/^(METR|HYDT|POLE|PANL)/.test(pt.l.netEl || '')) return;
         const gl = num(pp[keyOf(pp, RE.pg)]), il = num(pp[keyOf(pp, RE.pi)]);
-        if (gl != null) n += setV(p, rg, gl, log); const ik = keyOf(p, ri); if (il != null && ik && num(p[ik]) == null) n += setV(p, ri, il, log); // a pipe's invert can sit above the manhole invert (drop), so it is only filled when blank
+        if (gl != null) n += setV(p, rg, gl, log); const ik = keyOf(p, ri);
+        // manhole invert = its OUTLET (flow). Pipe start (leaving the manhole) always follows it; pipe end (arriving) = outlet + drop
+        // when the manhole records a drop, otherwise it is only filled when blank (Ahmed's convention)
+        if (il != null && ik) { if (side === 's') n += setV(p, ri, il, log); else { const dk = keyOf(pp, RE.drop); const dr = dk ? num(pp[dk]) : null; if (dr != null && dr > 0) n += setV(p, ri, il + dr, log); else if (num(p[ik]) == null) n += setV(p, ri, il, log); } }
       });
     }
     const sg = num(p[keyOf(p, RE.sg)]), si = num(p[keyOf(p, RE.si)]), eg = num(p[keyOf(p, RE.eg)]), ei = num(p[keyOf(p, RE.ei)]);
@@ -8956,6 +8979,7 @@ return ret;
     { id: 'S_SPACING', def: false, nets: ['sewer'], sev: 'warn', t: 'المسافة بين غرفتين أكبر من المسموح للقطر', d: '≤ 600 مم: 100 م · ≤ 1200 مم: 120 م · أكبر: 150 م', src: 'gulfS' },
     { id: 'ST_SPACING', nets: ['storm'], sev: 'warn', t: 'المسافة بين غرفتين أكبر من المسموح (تصريف أمطار)', d: '< 1500 مم: 100 م · ≥ 1500 مم: 250 م', src: 'jed' },
     { id: 'G_MAINJUNC', nets: ['storm'], sev: 'warn', t: 'خطين رئيسيين بيتلاقوا من غير غرفة', d: 'التلاقي بين خطين رئيسيين لازم يبقى في غرفة. في الصرف التلاقي على واي مسموح (قرار أحمد) فالقاعدة دي للأمطار بس', src: 'gulfS' },
+    { id: 'S_MHJUNC', nets: ['sewer'], sev: 'err', t: 'مواسير جاية من شوارع مختلفة بتتقابل من غير منهول', d: 'نفس الشارع بين منهولين ومتوصل بواي = عادي. لو 3 مواسير أو أكتر، أو ماسورتين بزاوية أكبر من 30° أو أسامي شوارع مختلفة = لازم منهول (قرار أحمد)', src: 'our' },
     { id: 'G_DIACHG', nets: ['sewer', 'storm'], sev: 'warn', t: 'تغيير قطر في نص الخط من غير غرفة', d: 'خطين ورا بعض بقطرين مختلفين ومفيش غرفة بينهم', src: 'gulfS' },
     { id: 'ST_MINDIA', def: false, nets: ['storm'], sev: 'info', t: 'قطر خط الأمطار أقل من الحد الأدنى', d: 'رئيسي < 600 مم أو فرعي < 450 مم (دليل جدة) — مقفولة: المشروع مش ماشي على دليل جدة', src: 'jed' },
     { id: 'W_HYDVALVE', nets: ['water'], sev: 'warn', t: 'فرعة حنفية الحريق مفيهاش محبس عزل', d: 'الحنفية بتتوصل بفرعة عليها محبس (Hydrant with service and valve)', src: 'esriW' },
@@ -8999,6 +9023,23 @@ return ret;
           if (on('G_DIACHG') && k === m.c.length - 1 || on('G_DIACHG') && k === 1) { const oth = endsAt(c, tol, ln => ln.el === 'MAIN', m); if (oth.length === 1) { const d2 = diaOf(oth[0].ln.l, oth[0].ln.f); if (d && d2 && d !== d2) R('G_DIACHG', m, d + ' ← ' + d2 + ' مم'); } }
         });
       });
+    }
+    if (net === 'sewer' && on('S_MHJUNC')) {
+      const SK = /^(street_?name|streetname|street|road_?name|اسم_?الشارع|الشارع)$/i;
+      const stOf = ln => { const p = ln.f.properties || {}; const k = Object.keys(p).find(x => SK.test(x)); return k && p[k] != null && String(p[k]).trim() !== '' ? String(p[k]).trim() : null; };
+      const dirAt = (ln, c) => { const a = ln.c, e0 = Math.hypot(a[0][0] - c[0], a[0][1] - c[1]) <= Math.max(tol, 0.5); const p0 = e0 ? a[0] : a[a.length - 1], p1 = e0 ? a[1] : a[a.length - 2]; return Math.atan2(p1[1] - p0[1], p1[0] - p0[0]); };
+      const seen = new Set();
+      mains.forEach(m => ends(m).forEach(c => {
+        const key = Math.round(c[0] * 10) + ',' + Math.round(c[1] * 10); if (seen.has(key)) return; seen.add(key);
+        if (ptNear(c, Math.max(tol, 0.5), isStruct)) return;
+        const at = endsAt(c, Math.max(tol, 0.5), ln => ln.el === 'MAIN', null); const ms = [...new Set(at.map(x => x.ln))];
+        const thru = lineNear(c, tol, ln => ln.el === 'MAIN' && ms.indexOf(ln) < 0); const n = ms.length + (thru ? 2 : 0);
+        if (n < 2) return;
+        let why = null;
+        if (n >= 3) why = n + ' مواسير رئيسية بتتقابل في النقطة دي';
+        else if (ms.length === 2) { let d = Math.abs(dirAt(ms[0], c) - dirAt(ms[1], c)) * 180 / Math.PI; if (d > 180) d = 360 - d; const defl = 180 - d; if (defl > 30) why = 'زاوية الانحراف ' + defl.toFixed(0) + '° (أكبر من 30°)'; const s1 = stOf(ms[0]), s2 = stOf(ms[1]); if (!why && s1 && s2 && s1 !== s2) why = 'شارعين مختلفين: ' + s1 + ' / ' + s2; }
+        if (why) R('S_MHJUNC', ms[0], why);
+      }));
     }
     if (net === 'water' && on('W_HYDVALVE')) {
       P.filter(p => p.el === 'HYDT').forEach(p => {
