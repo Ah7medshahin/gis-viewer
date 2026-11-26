@@ -4905,11 +4905,11 @@ return ret;
     ['CULV', /(culv|box.?culv)/i],
     ['VALV', /(valv|vlv|\bgv\b|\bbv\b|\bav\b|\bwo\b|air.?rel|wash|scour|butter|gate|check|prv|محبس|W_VALVE)/i],
     ['HYDT', /(hydr|hydt|\bfh\b|fire|حريق|طفاي)/i],
-    ['FITT', /(fitt|tee|bend|reduc|\bcap\b|plug|cross|elbow|coupl|saddle|sadl|كوع|مشترك|مسلوب|طبة|سادل|W_FITTING|junction)/i],
+    ['FITT', /(wye|\by\b|واي|fitt|tee|bend|reduc|\bcap\b|plug|cross|elbow|coupl|saddle|sadl|كوع|مشترك|مسلوب|طبة|سادل|W_FITTING|junction)/i],
     ['METR', /(meter|metr|عداد)/i],
     ['CLNO', /(clean.?out|clno|\bg?co\b|كلين)/i],
-    ['INSP', /(\bic\b|inspection|insp)/i],
-    ['MHOL', /(\bmh\b|manhole|mhol|chamber|chmb|غرفة|غرف)/i],
+    ['INSP', /(\bic\b|(^|[_\s-])ic($|[_\s-\d])|inspection|insp)/i],
+    ['MHOL', /(\bmh\b|(^|[_\s-])mh($|[_\s-\d])|manhole|mhol|chamber|chmb|غرفة|غرف)/i],
     ['INLT', /(inlet|inlt|gully|catch|\bcb\b|grat)/i],
     ['OUTF', /(outfall|outf|outlet)/i],
     ['PANL', /(panel|panl|\bslp\b|\bmdb\b|feeder|لوحة)/i],
@@ -9059,6 +9059,8 @@ return ret;
     { id: 'G_FLOWLOOP', nets: ['sewer', 'storm'], sev: 'err', t: 'اتجاه السريان بيلف في دايرة', d: 'مواسير الجاذبية لازم تمشي في اتجاه واحد لحد المخرج — الدايرة معناها إن خط أو أكتر مرسوم بالعكس', src: 'our' },
     { id: 'G_FLOWHEAD', nets: ['sewer', 'storm'], sev: 'err', t: 'سريان من اتجاهين بيتقابل ومفيش خروج', d: 'ماسورتين أو أكتر داخلين على نقطة ومفيش ولا ماسورة خارجة منها (ومش مخرج/محطة رفع) — غالبًا واحدة منهم معكوسة', src: 'our' },
     { id: 'G_FLOWOUT', nets: ['sewer', 'storm'], sev: 'warn', t: 'السريان مش بيوصل لمخرج الشبكة', d: 'لو مشيت مع اتجاه السريان من الماسورة دي بتقف عند نهاية تانية غير المخرج الرئيسي للشبكة', src: 'our' },
+    { id: 'H_BACKFLOW', nets: ['sewer', 'storm'], sev: 'err', t: 'ارتداد: المنسوب اللي بيستقبل أعلى من اللي بيصب فيه', d: 'في اتجاه السريان كل نقطة لازم تكون أوطى من اللي جاية منها: منهول ← واي ← منهول، IC/كلين أوت ← الخط الرئيسي، كاتش بيزن ← المنهول', src: 'our' },
+    { id: 'H_FLAT', def: false, nets: ['sewer', 'storm'], sev: 'warn', t: 'منسوبين متساويين في اتجاه السريان (ميل صفر)', d: 'المنسوب اللي جاي منه السريان زي اللي رايح له بالظبط', src: 'our' },
     { id: 'G_DIACHG', nets: ['sewer', 'storm'], sev: 'warn', t: 'تغيير قطر في نص الخط من غير غرفة', d: 'خطين ورا بعض بقطرين مختلفين ومفيش غرفة بينهم', src: 'gulfS' },
     { id: 'ST_MINDIA', def: false, nets: ['storm'], sev: 'info', t: 'قطر خط الأمطار أقل من الحد الأدنى', d: 'رئيسي < 600 مم أو فرعي < 450 مم (دليل جدة) — مقفولة: المشروع مش ماشي على دليل جدة', src: 'jed' },
     { id: 'W_HYDVALVE', nets: ['water'], sev: 'warn', t: 'فرعة حنفية الحريق مفيهاش محبس عزل', d: 'الحنفية بتتوصل بفرعة عليها محبس (Hydrant with service and valve)', src: 'esriW' },
@@ -9123,6 +9125,43 @@ return ret;
         const main = [...cnt.entries()].sort((a, b) => b[1] - a[1]); const big = main.length ? main[0][1] : 0;
         main.slice(1).forEach(([sk, n]) => { if (isOutlet(sk.c) || n >= big * 0.25) return; const first = grav.find(m => sinkOf.get(m) === sk); if (first) R('G_FLOWOUT', first, n + ' ماسورة بتصب في نهاية جانبية بدل المخرج الرئيسي'); });
       }
+    }
+    // ---- hydraulic level logic (Ahmed): along the flow every receiving point must sit LOWER than what feeds it ----
+    if ((net === 'sewer' || net === 'storm') && (on('H_BACKFLOW') || on('H_FLAT'))) {
+      const RX = GV.deriveRE || {}; const kOf = (p, re) => re ? Object.keys(p || {}).find(k => re.test(k)) : null; const nv = v => { if (v == null || v === '') return null; const n = parseFloat(v); return isFinite(n) ? n : null; };
+      const ptIL = p => { const pr = (p.f && p.f.properties) || {}; return nv(pr[kOf(pr, RX.pi)]); };
+      const lnIL = (ln, end) => { const pr = ln.f.properties || {}; return nv(pr[kOf(pr, end ? RX.ei : RX.si)]); };
+      const NAME = { MHOL: 'المنهول', INSP: 'الـ IC', CLNO: 'الكلين أوت', FITT: 'الواي', INLT: 'الكاتش بيزن', OUTF: 'المخرج' };
+      const nm = p => p ? (NAME[p.el] || 'النقطة') : 'الخط';
+      const R1 = Math.max(tol, 0.5); const seen = new Set();
+      const cmp = (up, dn, upName, dnName, x, ctx) => { if (up == null || dn == null) return; const key = x.l.name + '#' + x.fi + '#' + ctx; if (seen.has(key)) return; seen.add(key);
+        if (dn > up + 0.005) { if (on('H_BACKFLOW')) R('H_BACKFLOW', x, dnName + ' (' + dn.toFixed(2) + ') أعلى من ' + upName + ' (' + up.toFixed(2) + ') بـ ' + ((dn - up) * 100).toFixed(0) + ' سم — هيحصل ارتداد'); }
+        else if (Math.abs(dn - up) <= 0.005 && on('H_FLAT')) R('H_FLAT', x, upName + ' = ' + dnName + ' = ' + up.toFixed(2)); };
+      // 1) mains: node → node along the digitized flow (manhole → wye → manhole), using the points' inverts, else the pipe's own end levels
+      L.filter(x => x.el === 'MAIN').forEach(m => {
+        const a = m.c[0], b = m.c[m.c.length - 1]; const pa = ptNear(a, R1, p => ptIL(p) != null && /^(MHOL|INSP|CLNO|FITT|OUTF)$/.test(p.el || '')), pb = ptNear(b, R1, p => ptIL(p) != null && /^(MHOL|INSP|CLNO|FITT|OUTF)$/.test(p.el || ''));
+        const up = pa ? ptIL(pa.p) : lnIL(m, 0), dn = pb ? ptIL(pb.p) : lnIL(m, 1);
+        cmp(up, dn, pa ? nm(pa.p) + ' اللي جاي منه السريان' : 'أول الماسورة', pb ? nm(pb.p) + ' اللي بعده' : 'آخر الماسورة', m, 'main');
+      });
+      // 2) laterals / connection lines: the end on the main or the manhole is downstream; the house side (IC / clean-out) or the catch basin is upstream
+      L.filter(x => x.el !== 'MAIN' && x.el !== 'FORC').forEach(s => {
+        const e = [s.c[0], s.c[s.c.length - 1]];
+        const onMain = e.map(c => lineNear(c, tol, ln => ln.el === 'MAIN')); const onMH = e.map(c => ptNear(c, R1, p => /^(MHOL|OUTF|FITT)$/.test(p.el || '') && ptIL(p) != null));
+        let di = onMH[1] || onMain[1] ? 1 : onMH[0] || onMain[0] ? 0 : -1; if (di < 0) return; const ui = 1 - di;
+        const upP = ptNear(e[ui], R1, p => ptIL(p) != null && /^(INSP|CLNO|INLT|FITT)$/.test(p.el || ''));
+        const up = upP ? ptIL(upP.p) : lnIL(s, ui === 1);
+        let dn = null, dnName = '';
+        if (onMH[di] && ptIL(onMH[di].p) != null) { dn = ptIL(onMH[di].p); dnName = nm(onMH[di].p) + ' اللي بيصب فيه'; }
+        else if (onMain[di]) { // the main's invert at the connection point, interpolated along the main between its start and end levels
+          const mn = onMain[di].ln; const si = lnIL(mn, 0), ei = lnIL(mn, 1);
+          if (si != null && ei != null) { let acc = 0, best = Infinity, at = 0; for (let i = 1; i < mn.c.length; i++) { const p0 = mn.c[i - 1], p1 = mn.c[i]; const sl = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]); const t = sl ? Math.max(0, Math.min(1, ((e[di][0] - p0[0]) * (p1[0] - p0[0]) + (e[di][1] - p0[1]) * (p1[1] - p0[1])) / sl / sl)) : 0; const d = Math.hypot(p0[0] + t * (p1[0] - p0[0]) - e[di][0], p0[1] + t * (p1[1] - p0[1]) - e[di][1]); if (d < best) { best = d; at = acc + t * sl; } acc += sl; }
+            dn = si + (ei - si) * (mn.len ? at / mn.len : 0); dnName = 'الخط الرئيسي عند نقطة الصب'; } }
+        if (up == null && lnIL(s, di === 1) != null && dn != null) { /* only the lateral's own end level is known: compare that */ }
+        cmp(up, dn, upP ? nm(upP.p) : 'أول الوصلة', dnName || 'آخر الوصلة', s, 'lat');
+        // the lateral's own downstream end must not sit below the main/manhole either? (that is fine: a drop) — only the upstream side matters
+      });
+      // 3) storm: catch basin → its manhole directly (no line)
+      if (net === 'storm') P.filter(p => p.el === 'INLT' && ptIL(p) != null).forEach(p => { const mh = ptNear(p.c, 2, q => q.el === 'MHOL' && ptIL(q) != null); if (mh && !L.some(x => x.el !== 'MAIN' && [x.c[0], x.c[x.c.length - 1]].some(c => Math.hypot(c[0] - p.c[0], c[1] - p.c[1]) <= R1))) cmp(ptIL(p), ptIL(mh.p), 'الكاتش بيزن', 'المنهول اللي بيصب فيه', p, 'cb'); });
     }
     if (net === 'sewer' && on('S_MHJUNC')) {
       const SK = /^(street_?name|streetname|street|road_?name|اسم_?الشارع|الشارع)$/i;
