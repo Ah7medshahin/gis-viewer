@@ -3435,7 +3435,7 @@ return ret;
       t.append(fold, el('b', null, '📁 ' + g.name), el('span', 'tag', ls.length + ' طبقة')); h.appendChild(t);
       const vis = el('button', 'icon-btn small', ls.some(l => l.visible) ? '👁' : '◌'); vis.title = 'إظهار/إخفاء الجروب كله'; vis.onclick = () => { const v = !ls.some(l => l.visible); ls.forEach(l => setVis(l, v)); renderLayers(); };
       const zm = el('button', 'icon-btn small', '⤢'); zm.title = 'زوم على الجروب'; zm.onclick = () => { let bb = null; ls.forEach(l => { if (l.leaf && l.visible) { const b2 = l.leaf.getBounds(); if (b2.isValid()) bb = bb ? bb.extend(b2) : L.latLngBounds(b2.getSouthWest(), b2.getNorthEast()); } }); if (bb) map.fitBounds(bb, { padding: [30, 30], maxZoom: 18 }); };
-      const rn = el('button', 'icon-btn small', '✎'); rn.title = 'غيّر الاسم'; rn.onclick = () => { const v = prompt('اسم الجروب', g.name); if (v && v.trim()) { g.name = v.trim(); saveLG(); renderLayers(); } };
+      const rn = el('button', 'icon-btn small', '✎'); rn.title = 'غيّر الاسم'; rn.onclick = () => askText('اسم الجروب', g.name).then(v => { if (v && v.trim()) { g.name = v.trim(); saveLG(); renderLayers(); } });
       const dl = el('button', 'icon-btn small', '✕'); dl.title = 'فك الجروب (الطبقات بترجع مكانها)'; dl.onclick = () => { all.forEach(o => { if (o._grp === g.id) o._grp = ''; }); LG = LG.filter(x => x !== g); saveLG(); renderLayers(); };
       const only = el('button', 'icon-btn small', '★'); only.title = 'سيب الجروب ده بس وامسح باقي الطبقات من الشغل'; only.onclick = () => keepOnly(ls, 'الجروب «' + g.name + '»');
       h.append(vis, zm, only, rn, dl); sec.appendChild(h);
@@ -3491,6 +3491,13 @@ return ret;
   }
   function setVis(l, v) { l.visible = v; dirty(); if (!l.leaf) return; if (v) { l.leaf.addTo(map); setTimeout(applyOrder, 0); } else map.removeLayer(l.leaf); if (l.labelField) refreshLabels(); }
   // ---- drawing order: the layer at the top of the list is drawn on top ----
+  // in-page replacement for prompt() (blocked inside the Claude page)
+  function askText(title, val) { return new Promise(res => { let w = document.getElementById('askBox'); if (w) w.remove(); w = el('div', 'qc-rev'); w.id = 'askBox';
+    const h = el('div', 'qc-rev-h'); h.appendChild(el('b', null, title)); const x = el('button', 'icon-btn', '✕'); h.appendChild(x);
+    const inp = el('input'); inp.value = val || ''; inp.style.cssText = 'width:100%;font:inherit;padding:8px;border-radius:10px';
+    const ok = el('button', 'chip ok', 'تمام'); const done = v => { w.remove(); res(v); }; ok.onclick = () => done(inp.value); x.onclick = () => done(null); inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value); else if (e.key === 'Escape') done(null); };
+    w.append(h, inp, ok); document.body.appendChild(w); inp.focus(); inp.select(); }); }
+  GV.askText = askText;
   function applySel(l) { if (!l.leaf || !l.leaf.eachLayer) return; const v = l.noSelect ? 'none' : ''; l.leaf.eachLayer(x => { const go = y => { if (y._path) y._path.style.pointerEvents = v; if (y._icon) y._icon.style.pointerEvents = v; if (y.eachLayer) y.eachLayer(go); }; go(x); }); }
   function setSelectable(l, on) { l.noSelect = !on; applySel(l); renderLayers(); dirty(); toast(on ? 'السيليكت اتفتح على «' + l.name + '»' : 'السيليكت اتقفل على «' + l.name + '» — الكليك بيعدّي للي تحتها'); }
   function applyOrder() { sources.forEach(src => src.layers.slice().reverse().forEach(l => { if (l.leaf && l.visible && map.hasLayer(l.leaf) && l.leaf.bringToFront) { try { l.leaf.bringToFront(); } catch (e) { } } if (l.noSelect) applySel(l); })); }
@@ -3530,6 +3537,7 @@ return ret;
     it(l.visible ? '◌ إخفاء' : '👁 إظهار', () => { setVis(l, !l.visible); renderLayers(); });
     if (l.leaf) it(l.noSelect ? '🔓 افتح السيليكت للطبقة' : '🔒 اقفل السيليكت للطبقة', () => setSelectable(l, !!l.noSelect));
     it('☰ جدول البيانات', () => openTable(l, true));
+    if (l.leaf && (l.kind === 'line' || l.kind === 'point') && GV.recalcLayers) it('🔄 حدّث الحقول المحسوبة', () => { const n = GV.recalcLayers([l]); rebuild(l); dirty(); toast(n ? 'اتحدّث ' + n + ' قيمة (إحداثيات، طول، مناسيب من النقط، عمق، ميل)' : 'كل الحقول المحسوبة مظبوطة'); });
     if (l.leaf) it('🎨 تلوين حسب حقل', () => openStyle(l, true));
     m.appendChild(el('div', 'ctx-sep'));
     it('⤒ ترسم فوق الكل', () => moveLayer(l, 'top')); it('▲ لفوق', () => moveLayer(l, 'up')); it('▼ لتحت', () => moveLayer(l, 'down')); it('⤓ ترسم تحت الكل', () => moveLayer(l, 'bottom'));
@@ -4683,7 +4691,7 @@ return ret;
     const inp = e.target; if (!inp.matches || !inp.matches('input[data-logo]') || !inp.files || !inp.files[0]) return;
     const f = inp.files[0]; const bytes = new Uint8Array(await f.arrayBuffer()); let w = 0, h = 0;
     try { const bm = await createImageBitmap(new Blob([bytes], { type: f.type })); w = bm.width; h = bm.height; } catch (er) { }
-    if (!w) { alert('الصورة مش مقروءة — جرّب PNG أو JPG'); return; }
+    if (!w) { GV.toast('الصورة مش مقروءة — جرّب PNG أو JPG'); return; }
     GV.cadLogos[inp.dataset.logo] = { name: f.name, ext: /png$/i.test(f.type) ? 'png' : 'jpg', w, h, bytes }; save(); mark();
   });
   document.addEventListener('DOMContentLoaded', mark); setTimeout(mark, 1500);
@@ -4986,7 +4994,7 @@ return ret;
         if (!pa || !pb) A('err', 'ماسورة انحدار مش بتبدأ وتنتهي عند غرفة', m, (!pa && !pb ? 'الطرفين' : !pa ? 'البداية' : 'النهاية') + ' مش عند غرفة تفتيش');
         if (pa) { if (!at.has(pa.p)) at.set(pa.p, { in: [], out: [] }); at.get(pa.p).out.push(m); }
         if (pb) { if (!at.has(pb.p)) at.set(pb.p, { in: [], out: [] }); at.get(pb.p).in.push(m); }
-        if (m.len > 120) A('warn', 'المسافة بين الغرف كبيرة', m, m.len.toFixed(1) + ' م (أكتر من 120 م)');
+        // spacing between manholes: storm → netstd ST_SPACING; sewer spacing is off (Ahmed's decision)
         const pr = m.f.properties || {}; let us = numOf(pr, RE.us), ds = numOf(pr, RE.ds); let src = 'الحقول';
         if (us == null || ds == null) { const za = a[2] != null ? a[2] : (m.z[0] || [])[2], zb = b[2] != null ? b[2] : (m.z[m.z.length - 1] || [])[2]; if (isFinite(za) && isFinite(zb) && (za || zb)) { us = za; ds = zb; src = 'Z'; } }
         if (us != null && ds != null && m.len > 0) {
@@ -5642,6 +5650,36 @@ return ret;
     showResults(kept, GV.qcLast.cfg.sel); if (sc) requestAnimationFrame(() => { sc.scrollTop = st0; });
     GV.toast(yes ? 'تمام، اتسجلت كقاعدة واتشالت ' + q.items.length + ' ملاحظة' : 'تمام، اتعلّمت كأخطاء مؤكدة');
   }
+  const SYSF = /^(objectid|fid|oid|globalid|shape(_length|_area|\.len|\.area)?|shape_leng|st_length\(shape\)|st_area\(shape\)|created_user|created_date|last_edited_user|last_edited_date)$/i;
+  const isEmpty = v => v == null || (typeof v === 'string' && (v.trim() === '' || /^(<null>|null|none)$/i.test(v.trim())));
+  const idOf = (f, i) => { const p = f.properties || {}; for (const k of ['OBJECTID', 'objectid', 'FID', 'fid', 'OID']) if (p[k] != null) return p[k]; return i + 1; };
+  function attrStats() {
+    const sel = (GV.qcLast && GV.qcLast.cfg && GV.qcLast.cfg.sel) || []; const out = [];
+    sel.map(x => x.l).filter(l => l && l.features && l.features.length).forEach(l => {
+      const keys = new Set(); l.features.forEach(f => Object.keys(f.properties || {}).forEach(k => keys.add(k)));
+      const fields = [...keys].filter(k => !SYSF.test(k)).map(k => { let n = 0; l.features.forEach(f => { if (isEmpty((f.properties || {})[k])) n++; }); return { k, n, empty: n > 0, all: n === l.features.length }; });
+      out.push({ l, fields });
+    });
+    return out;
+  }
+  async function attrXlsx(notes) {
+    if (!GV.xlsx) return GV.toast('مولّد Excel مش جاهز');
+    const st = attrStats(); const sheets = [];
+    const sum = [['الطبقة', 'الحقل', 'عدد الفاضي', 'إجمالي العناصر', 'نسبة الفاضي %', 'الحالة']];
+    st.forEach(x => x.fields.filter(f => f.empty).sort((a, b) => b.n - a.n).forEach(f => sum.push([x.l.name, f.k, f.n, x.l.features.length, +(f.n * 100 / x.l.features.length).toFixed(1), f.all ? 'فاضي بالكامل' : f.n / x.l.features.length >= 0.5 ? 'أغلبه فاضي' : 'فاضي جزئي'])));
+    sheets.push({ name: 'الحقول الفاضية - ملخص', rows: sum });
+    st.forEach(x => {
+      const part = x.fields.filter(f => f.empty && !f.all); if (!part.length) return;
+      const rows = [['OBJECTID'].concat(part.map(f => f.k)).concat(['عدد الفاضي', 'Longitude', 'Latitude'])];
+      x.l.features.forEach((f, i) => { const p = f.properties || {}; const e = part.filter(fl => isEmpty(p[fl.k])); if (!e.length) return; let ll = ['', '']; try { const c = L.geoJSON(f.wgs).getBounds().getCenter(); ll = [+c.lng.toFixed(7), +c.lat.toFixed(7)]; } catch (er) { } rows.push([idOf(f, i)].concat(part.map(fl => isEmpty(p[fl.k]) ? '⬜ فاضي' : '')).concat([e.length]).concat(ll)); });
+      if (rows.length > 1) sheets.push({ name: ('فاضي ' + x.l.name).slice(0, 31), rows });
+    });
+    const rev = [['الطبقة', 'OBJECTID', 'الحقل', 'القيمة', 'الملاحظة', 'التفاصيل', 'Longitude', 'Latitude']];
+    notes.filter(i => !/فاضي|ناقصة/.test(i.type)).forEach(i => { const f = i.lref && i.fi != null ? i.lref.features[i.fi] : null; const m = i.meta || {}; const fld = m.field || ''; const v = f && fld ? (f.properties || {})[fld] : (m.value != null ? m.value : ''); rev.push([i.layer || '', f ? idOf(f, i.fi) : '', fld, v == null ? '' : v, i.type, i.detail || '', i.ll ? +i.ll[0].toFixed(7) : '', i.ll ? +i.ll[1].toFixed(7) : '']); });
+    sheets.push({ name: 'داتا محتاجة مراجعة', rows: rev });
+    const data = await GV.xlsx(sheets);
+    await GV.saveFile('Attribute_Notes_' + new Date().toISOString().slice(0, 10) + '.xlsx', data);
+  }
   const QF = { focus: false, layer: null };
   // sample reviewer: up to 8 cases spread over the whole set, then one decision for the type
   function review(p, fixAll, acceptAll, canFix) {
@@ -5666,20 +5704,30 @@ return ret;
   }
   function renderSummary(issues) {
     const box = $('#qcResBody'); box.textContent = '';
+    // descriptive-data notes (empty fields, odd values) leave the problem list and go to an Excel workbook instead
+    const isNote = i => i.cat === 'attr' && !/(دومين|Subtype|إجباري)/.test(i.type);
+    const notes = issues.filter(isNote); const all0 = issues; issues = issues.filter(i => !isNote(i));
     const probs = problems(issues); const qs = questions(issues);
     const real = probs.filter(p => p.sev !== 'info');
     const top = el('div', 'kpis');
     [[real.filter(p => p.sev === 'err').length, 'مشكلة لازم تتحل', '#e03131'], [real.filter(p => p.sev === 'warn').length, 'تحذير', '#f08c00'], [qs.length, 'سؤال محتاج إجابتك', '#1c7ed6']].forEach(([v, t, c]) => { const d = el('div', 'kpi'); d.style.setProperty('--kc', c); d.append(el('b', null, v.toLocaleString('en')), el('span', null, t)); top.appendChild(d); });
     box.appendChild(top);
     box.appendChild(el('p', 'muted small', 'اتجمعت ' + issues.length.toLocaleString('en') + ' ملاحظة في ' + probs.length + ' مشكلة حسب سببها ومكانها' + (GV.qcDropped ? '، واتشال ' + GV.qcDropped + ' ملاحظة بسبب قواعدك' : '') + '.'));
+    if (notes.length || (GV.qcLast && GV.qcLast.cfg && GV.qcLast.cfg.sel && GV.qcLast.cfg.sel.length)) {
+      const st = attrStats(); const emp = st.reduce((a, x) => a + x.fields.filter(f => f.empty).length, 0);
+      const c = el('div', 'cmp'); c.style.setProperty('--sc', '#1c7ed6');
+      c.appendChild(el('b', null, '📋 ملاحظات الداتا الوصفية — في ملف Excel مش في القايمة'));
+      c.appendChild(el('div', 'small', emp + ' حقل فيه قيم فاضية في ' + st.filter(x => x.fields.some(f => f.empty)).length + ' طبقة · ' + notes.filter(i => !/فاضي|ناقصة/.test(i.type)).length.toLocaleString('en') + ' قيمة محتاجة تبص عليها'));
+      const b = el('button', 'chip ok', '⬇ نزّل ملف Excel للداتا الوصفية'); b.onclick = () => attrXlsx(notes); c.appendChild(b); box.appendChild(c);
+    }
     { // working on big volumes: focus on what blocks delivery, filter by layer
       const tb = el('div', 'qc-filt');
-      const fc = el('button', 'chip' + (QF.focus ? ' on' : ''), (QF.focus ? '✓ ' : '') + '🎯 اللي بيعطّل التسليم بس'); fc.title = 'اخفي التحذيرات والملاحظات واعرض الأخطاء بس'; fc.onclick = () => { QF.focus = !QF.focus; renderSummary(issues); };
+      const fc = el('button', 'chip' + (QF.focus ? ' on' : ''), (QF.focus ? '✓ ' : '') + '🎯 اللي بيعطّل التسليم بس'); fc.title = 'اخفي التحذيرات والملاحظات واعرض الأخطاء بس'; fc.onclick = () => { QF.focus = !QF.focus; renderSummary(all0); };
       tb.appendChild(fc);
       const infos = probs.filter(p => p.sev === 'info'); if (infos.length) { const ai = el('button', 'chip', '✓ عدّي كل الملاحظات (' + infos.reduce((a, p) => a + p.n, 0) + ')'); ai.title = 'الملاحظات (info) مش بتعطّل التسليم: تتشال مرة واحدة وتتحفظ كقاعدة'; ai.onclick = () => { infos.forEach(p => RULES.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), kind: 'ignore', layer: p.layer || '*', issue: p.type, from: 'تجاهل الملاحظات' })); saveRules(); answer({ items: [], rule: null, key: '' }, false); }; tb.appendChild(ai); }
       const lc = new Map(); probs.forEach(p => { if (p.layer) lc.set(p.layer, (lc.get(p.layer) || 0) + p.n); });
-      if (lc.size > 1) { const all = el('button', 'chip' + (!QF.layer ? ' on' : ''), 'كل الطبقات'); all.onclick = () => { QF.layer = null; renderSummary(issues); }; tb.appendChild(all);
-        [...lc.entries()].sort((a, b) => b[1] - a[1]).forEach(([ln, n]) => { const c = el('button', 'chip' + (QF.layer === ln ? ' on' : ''), ln + ' (' + n.toLocaleString('en') + ')'); c.onclick = () => { QF.layer = QF.layer === ln ? null : ln; renderSummary(issues); }; tb.appendChild(c); }); }
+      if (lc.size > 1) { const all = el('button', 'chip' + (!QF.layer ? ' on' : ''), 'كل الطبقات'); all.onclick = () => { QF.layer = null; renderSummary(all0); }; tb.appendChild(all);
+        [...lc.entries()].sort((a, b) => b[1] - a[1]).forEach(([ln, n]) => { const c = el('button', 'chip' + (QF.layer === ln ? ' on' : ''), ln + ' (' + n.toLocaleString('en') + ')'); c.onclick = () => { QF.layer = QF.layer === ln ? null : ln; renderSummary(all0); }; tb.appendChild(c); }); }
       box.appendChild(tb);
     }
     const unErr = issues.filter(i => (i.cat === 'un' || i.cat === 'topo') && i.sev === 'err').length;
@@ -7939,7 +7987,7 @@ return ret;
     pend.forEach((p, i) => {
       const r = el('div', 'rule'); const t = p.t === 'edit' ? ('تعديل ' + p.n + ' عنصر في ' + p.layer + ' · لو: ' + p.where + ' · ' + Object.keys(p.set).map(k => k + ' = ' + p.set[k]).join(' · ')) : p.t === 'rule' ? (p.r.kind + ' · ' + (p.r.layer || '*') + (p.r.field && p.r.field !== '*' ? ' · ' + p.r.field : '') + (p.r.value ? ' · "' + p.r.value + '"' : '') + (p.r.min != null || p.r.max != null ? ' · ' + (p.r.min ?? '') + '..' + (p.r.max ?? '') : '') + (p.r.values ? ' · {' + p.r.values + '}' : '')) : ('تصنيف ' + p.layer + ' ← ' + p.category);
       const sp = el('span'); sp.append(el('b', 'mono', t), el('br'), el('small', 'muted', p.why || '')); r.appendChild(sp);
-      const ok = el('button', 'chip ok', 'موافق'); ok.onclick = () => { if (p.t === 'edit') { const undo = []; let n = 0; p.l.features.forEach((f, i) => { const pr = f.properties || (f.properties = {}); let hit = false; try { hit = !!p.wf(pr, i); } catch (e) { } if (!hit) return; undo.push({ f, old: Object.assign({}, pr) }); const nv = {}; p.sf.forEach(([k, fn]) => { try { nv[k] = fn(pr, i); } catch (e) { } }); Object.assign(pr, nv); n++; }); GV.aiUndo = { undo, layer: p.l }; if (GV.onDirty) GV.onDirty(); GV.rebuild && p.l.leaf && GV.rebuild(p.l); GV.toast('اتعدل ' + n + ' عنصر — تقدر تتراجع من زرار ↶ في شاشة Claude'); pend.splice(i, 1); drawPend(); const u = el('button', 'chip', '↶ تراجع عن آخر تعديل'); u.onclick = () => { (GV.aiUndo.undo || []).forEach(x => { x.f.properties = x.old; }); GV.aiUndo = null; u.remove(); GV.toast('اتراجعت'); }; $('#aiPend').appendChild(u); return; } if (p.t === 'rule') { const rr = Object.assign({}, p.r); if (rr.values) rr.values = String(rr.values).split(/[|,]/).map(s => s.trim()).filter(Boolean); GV.qcAddRule(rr); GV.toast('اتضافت القاعدة — هتتطبق في الفحص الجاي'); } else { GV.orgOverrides[p.layer] = p.category; GV.toast('اتسجل — هيظهر في "تنظيم الكاد"'); } pend.splice(i, 1); drawPend(); };
+      const ok = el('button', 'chip ok', 'موافق'); ok.onclick = () => { if (p.t === 'edit') { const undo = []; let n = 0; p.l.features.forEach((f, i) => { const pr = f.properties || (f.properties = {}); let hit = false; try { hit = !!p.wf(pr, i); } catch (e) { } if (!hit) return; undo.push({ f, old: Object.assign({}, pr) }); const nv = {}; p.sf.forEach(([k, fn]) => { try { nv[k] = fn(pr, i); } catch (e) { } }); Object.assign(pr, nv); if (GV.recalcDerived) { try { GV.recalcDerived(p.l, f, { quiet: true }); } catch (e) { } } n++; }); GV.aiUndo = { undo, layer: p.l }; if (GV.onDirty) GV.onDirty(); GV.rebuild && p.l.leaf && GV.rebuild(p.l); GV.toast('اتعدل ' + n + ' عنصر — تقدر تتراجع من زرار ↶ في شاشة Claude'); pend.splice(i, 1); drawPend(); const u = el('button', 'chip', '↶ تراجع عن آخر تعديل'); u.onclick = () => { (GV.aiUndo.undo || []).forEach(x => { x.f.properties = x.old; }); GV.aiUndo = null; u.remove(); GV.toast('اتراجعت'); }; $('#aiPend').appendChild(u); return; } if (p.t === 'rule') { const rr = Object.assign({}, p.r); if (rr.values) rr.values = String(rr.values).split(/[|,]/).map(s => s.trim()).filter(Boolean); GV.qcAddRule(rr); GV.toast('اتضافت القاعدة — هتتطبق في الفحص الجاي'); } else { GV.orgOverrides[p.layer] = p.category; GV.toast('اتسجل — هيظهر في "تنظيم الكاد"'); } pend.splice(i, 1); drawPend(); };
       const no = el('button', 'chip', 'لأ'); no.onclick = () => { pend.splice(i, 1); drawPend(); };
       r.append(ok, no); box.appendChild(r);
     });
@@ -7966,7 +8014,13 @@ return ret;
   }
   $('#btnAI').addEventListener('click', open);
   GV.openAI = open; GV.aiAsk = q => { open(); setTimeout(() => ask(q), 50); };
-  GV.customRequest = () => { const t = prompt('اكتب طلبك (تكويد أو تعديل معين على الداتا أو الكاد):'); if (!t || !t.trim()) return; GV.aiAsk('طلب مخصص من اليوزر — اشتغل عليه معاه خطوة خطوة: افهم الداتا الأول بأدواتك، وقوله هتعمل إيه، وأي تعديل على البيانات اعرضه بأداة propose_edit عشان يوافق عليه (ولو كبير قسّمه). لو الطلب محتاج ميزة مش موجودة في البرنامج، اكتبله وصف دقيق للميزة يبعته للمطوّر. الطلب: ' + t.trim()); };
+  GV.customRequest = () => { // prompt() is blocked inside the Claude page, so the request is typed in a small in-page box
+    let w = document.getElementById('crBox'); if (w) w.remove(); w = el('div', 'qc-rev'); w.id = 'crBox';
+    const h = el('div', 'qc-rev-h'); h.appendChild(el('b', null, '🛠 طلب مخصص')); const x = el('button', 'icon-btn', '✕'); x.onclick = () => w.remove(); h.appendChild(x);
+    const ta = el('textarea'); ta.rows = 4; ta.placeholder = 'اكتب طلبك: تكويد أو تعديل معين على الداتا أو الكاد…'; ta.style.cssText = 'width:100%;font:inherit;border-radius:10px;padding:8px';
+    const go = el('button', 'chip ok', 'ابعت لـ Claude'); go.onclick = () => { const t = ta.value; if (!t.trim()) return ta.focus(); w.remove(); GV._crSend(t); };
+    w.append(h, ta, go); document.body.appendChild(w); ta.focus(); };
+  GV._crSend = t => { GV.aiAsk('طلب مخصص من اليوزر — اشتغل عليه معاه خطوة خطوة: افهم الداتا الأول بأدواتك، وقوله هتعمل إيه، وأي تعديل على البيانات اعرضه بأداة propose_edit عشان يوافق عليه (ولو كبير قسّمه). لو الطلب محتاج ميزة مش موجودة في البرنامج، اكتبله وصف دقيق للميزة يبعته للمطوّر. الطلب: ' + t.trim()); };
   { const tools = document.querySelector('#toolsSheet .tools'); if (tools) { const b = el('button', 'tool'); b.innerHTML = '<span>🛠</span><b>طلب مخصص</b><small>اطلب تكويد أو تعديل معين ونشتغله سوا خطوة خطوة</small>'; b.onclick = () => GV.customRequest(); tools.appendChild(b); } }
   GV._aiTools = TOOLS; // for tests
 })();
@@ -8583,7 +8637,9 @@ return ret;
   function setGeomFromWgs(l, f, wgsGeom) { const crs = crsOf(l); f.wgs = { type: 'Feature', properties: {}, geometry: wgsGeom }; f.geometry = GV.mapCoords(wgsGeom, c => crs.inv(c));
     // keep the coordinate fields in step with the geometry (GIS ↔ CAD must match)
     const pr = f.properties || {}; const g = f.geometry; const st = g.type === 'Point' ? g.coordinates : g.type === 'LineString' ? g.coordinates[0] : null, en = g.type === 'LineString' ? g.coordinates[g.coordinates.length - 1] : null;
-    Object.keys(pr).forEach(k => { const K = k.toUpperCase(); if (st && /^(X|XCOORDINATE|X_COORDINATES?|EASTING|POINT_X|STARTXCOORDINATE|START_X_COORDINATES_?)$/.test(K)) pr[k] = +st[0].toFixed(4); else if (st && /^(Y|YCOORDINATE|Y_COORDINATES?|NORTHING|POINT_Y|STARTYCOORDINATE|START_Y_COORDINATES_?)$/.test(K)) pr[k] = +st[1].toFixed(4); else if (en && /^(ENDXCOORDINATE|END_X_COORDINATES_?)$/.test(K)) pr[k] = +en[0].toFixed(4); else if (en && /^(ENDYCOORDINATE|END_Y_COORDINATES_?)$/.test(K)) pr[k] = +en[1].toFixed(4); }); }
+    Object.keys(pr).forEach(k => { const K = k.toUpperCase(); if (st && /^(X|XCOORDINATE|X_COORDINATES?|EASTING|POINT_X|STARTXCOORDINATE|START_X_COORDINATES_?)$/.test(K)) pr[k] = +st[0].toFixed(4); else if (st && /^(Y|YCOORDINATE|Y_COORDINATES?|NORTHING|POINT_Y|STARTYCOORDINATE|START_Y_COORDINATES_?)$/.test(K)) pr[k] = +st[1].toFixed(4); else if (en && /^(ENDXCOORDINATE|END_X_COORDINATES_?)$/.test(K)) pr[k] = +en[0].toFixed(4); else if (en && /^(ENDYCOORDINATE|END_Y_COORDINATES_?)$/.test(K)) pr[k] = +en[1].toFixed(4); });
+    // length, levels from the end structures, depth and slope follow the new geometry (and the pipes on a moved manhole)
+    if (GV.recalcDerived) { try { const r = GV.recalcDerived(l, f, { quiet: true }); r.touched.forEach(t => { if (t !== l) GV.rebuild(t); }); if (r.n) { clearTimeout(setGeomFromWgs.t); setGeomFromWgs.t = setTimeout(() => GV.toast('الحقول المحسوبة اتحدّثت تلقائي (الإحداثيات، الطول، المناسيب، العمق، الميل)', 2500), 300); } } catch (e) { console.error(e); } } }
 
   // ---------- clicks ----------
   GV.editClick = (l, i, ev) => { if (on && (tool === 'box' || tool === 'move')) { L.DomEvent.stopPropagation(ev); return true; } if (!on || tool !== 'select' && tool !== 'vertex') return false; L.DomEvent.stopPropagation(ev); toggle(l, i, ev.originalEvent && ev.originalEvent.shiftKey); if (tool === 'select' && sel.length === 1) GV.showFeature(l, i, ev.latlng); else if (tool === 'select' && sel.length > 1) showTbl(true); return true; };
@@ -8766,6 +8822,88 @@ return ret;
 
 </script>
 <script>
+/* Derived fields kept in step with the geometry and the network automatically:
+   coordinates, length, start/end ground & invert levels of a line taken from the points at its ends, depth = GL − IL,
+   slope = (start IL − end IL) / length × 100. Runs after every geometry edit (move / vertex), after edits applied by Claude,
+   and on demand for whole layers. Only fields that already exist are written; originals are never touched (edits run
+   on work copies). */
+(function () {
+  'use strict';
+  const GV = window.GV;
+  const RE = {
+    x: /^(x|xcoordinate|x_coordinates?|easting|point_x)$/i, y: /^(y|ycoordinate|y_coordinates?|northing|point_y)$/i,
+    sx: /^(start_?x_?coord(inate)?s?_?|startxcoordinate)$/i, sy: /^(start_?y_?coord(inate)?s?_?|startycoordinate)$/i,
+    ex: /^(end_?x_?coord(inate)?s?_?|endxcoordinate)$/i, ey: /^(end_?y_?coord(inate)?s?_?|endycoordinate)$/i,
+    len: /^(length|len|pipe_?length|pipelength|measuredlength|shape_?length|shape_leng|cable_?length)$/i,
+    sg: /^(start_?pipe_?ground_?elevation|startpipegroundelevation|us_?gl|us_?ground(_?level)?|start_?gl|us_?cover(_?level)?|start_?ground(_?level)?)$/i,
+    si: /^(start_?pipe_?elevation|startpipeelevation|us_?(pipe_?)?il|us_?inv(ert)?(_?level)?|start_?inv(ert)?(_?level)?|start_?il)$/i,
+    eg: /^(end_?pipe_?ground_?elevation|endpipegroundelevation|ds_?gl|ds_?ground(_?level)?|end_?gl|ds_?cover(_?level)?|end_?ground(_?level)?)$/i,
+    ei: /^(end_?pipe_?elevation|endpipeelevation|ds_?(pipe_?)?il|ds_?inv(ert)?(_?level)?|end_?inv(ert)?(_?level)?|end_?il)$/i,
+    sd: /^(start_?depth|us_?depth)$/i, ed: /^(end_?depth|ds_?depth)$/i,
+    slope: /^(slope|slope_?percent|slope_?pct|gradient)$/i,
+    pg: /^(ground_?elevation|groundelevation|ground_?level|cover_?level|cover|cl|gl|rim(_?level)?|rim_?elevation)$/i,
+    pi: /^(elevation|invert_?level|invert|il|inv|invert_?elevation|bottom_?elevation)$/i,
+    pd: /^(depth|mh_?depth|manhole_?depth)$/i
+  };
+  const keyOf = (p, re) => Object.keys(p).find(k => re.test(k));
+  const num = v => { if (v == null || v === '') return null; const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : null; };
+  const r3 = v => +v.toFixed(3);
+  // metres between two WGS84 points (short distances)
+  const dM = (a, b) => { const k = Math.cos((a[1] + b[1]) / 2 * Math.PI / 180) * 111320; return Math.hypot((a[0] - b[0]) * k, (a[1] - b[1]) * 110540); };
+  const ends = f => { const g = f.wgs && f.wgs.geometry; if (!g) return null; const c = g.type === 'LineString' ? g.coordinates : g.type === 'MultiLineString' && g.coordinates.length ? [].concat(...g.coordinates) : null; return c && c.length > 1 ? [c[0], c[c.length - 1]] : null; };
+  const lenOf = f => { const g = f.geometry; if (!g) return null; const parts = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : null; if (!parts) return null;
+    const geo = Math.abs((parts[0][0] || [0])[0]) <= 180 && Math.abs((parts[0][0] || [0, 0])[1]) <= 90; let L = 0;
+    parts.forEach(c => { for (let i = 1; i < c.length; i++) L += geo ? dM(c[i - 1], c[i]) : Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]); }); return L; };
+  const layers = () => GV.sources.filter(s => s.id !== 'qc' && s.id !== 'field').flatMap(s => s.layers.map(l => ({ s, l })));
+  const editable = s => !(GV.superseded && GV.superseded(s)) && !s.readOnly;
+  const pointAt = (c, tol) => { let best = null; layers().forEach(({ l }) => { if (l.kind !== 'point') return; l.features.forEach(f => { const g = f.wgs && f.wgs.geometry; if (!g || g.type !== 'Point' || f._sym) return; const d = dM(c, g.coordinates); if (d <= tol && (!best || d < best.d)) best = { d, f, l }; }); }); return best; };
+  function setV(p, re, v, log) { const k = keyOf(p, re); if (!k || v == null || !isFinite(v)) return 0; const nv = r3(v); if (num(p[k]) === nv) return 0; p[k] = typeof p[k] === 'string' ? String(nv) : nv; if (log) log.push(k); return 1; }
+  function linePart(l, f, log) {
+    const p = f.properties || (f.properties = {}); let n = 0; const g = f.geometry; if (!g) return 0;
+    const parts = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : null; if (!parts) return 0;
+    const a = parts[0][0], b = parts[parts.length - 1][parts[parts.length - 1].length - 1];
+    n += setV(p, RE.sx, a[0], log) + setV(p, RE.sy, a[1], log) + setV(p, RE.ex, b[0], log) + setV(p, RE.ey, b[1], log);
+    const L = lenOf(f); if (L != null) n += setV(p, RE.len, L, log);
+    const e = ends(f);
+    if (e) { // levels from the structures at both ends
+      [[e[0], RE.sg, RE.si], [e[1], RE.eg, RE.ei]].forEach(([c, rg, ri]) => {
+        const pt = pointAt(c, 0.5); if (!pt) return; const pp = pt.f.properties || {};
+        if (/^(METR|HYDT|POLE|PANL)/.test(pt.l.netEl || '')) return;
+        const gl = num(pp[keyOf(pp, RE.pg)]), il = num(pp[keyOf(pp, RE.pi)]);
+        if (gl != null) n += setV(p, rg, gl, log); const ik = keyOf(p, ri); if (il != null && ik && num(p[ik]) == null) n += setV(p, ri, il, log); // a pipe's invert can sit above the manhole invert (drop), so it is only filled when blank
+      });
+    }
+    const sg = num(p[keyOf(p, RE.sg)]), si = num(p[keyOf(p, RE.si)]), eg = num(p[keyOf(p, RE.eg)]), ei = num(p[keyOf(p, RE.ei)]);
+    if (sg != null && si != null && sg > si) n += setV(p, RE.sd, sg - si, log);
+    if (eg != null && ei != null && eg > ei) n += setV(p, RE.ed, eg - ei, log);
+    if (si != null && ei != null && L) n += setV(p, RE.slope, (si - ei) / L * 100, log);
+    return n;
+  }
+  function pointPart(l, f, log) {
+    const p = f.properties || (f.properties = {}); let n = 0; const g = f.geometry; if (!g || g.type !== 'Point') return 0;
+    n += setV(p, RE.x, g.coordinates[0], log) + setV(p, RE.y, g.coordinates[1], log);
+    const gl = num(p[keyOf(p, RE.pg)]), il = num(p[keyOf(p, RE.pi)]);
+    if (gl != null && il != null && gl > il) n += setV(p, RE.pd, gl - il, log);
+    return n;
+  }
+  // a changed feature + the lines touching it (a moved/edited manhole updates the pipes on it)
+  function recalc(l, f, opts) {
+    opts = opts || {}; const log = []; let n = 0; const touched = new Set();
+    if (l.kind === 'point' || (f.geometry && f.geometry.type === 'Point')) {
+      n += pointPart(l, f, log);
+      const c = f.wgs && f.wgs.geometry && f.wgs.geometry.coordinates;
+      if (c) layers().forEach(({ s, l: L2 }) => { if (L2.kind !== 'line' || !editable(s)) return; L2.features.forEach(lf => { const e = ends(lf); if (e && (dM(e[0], c) <= 0.5 || dM(e[1], c) <= 0.5)) { n += linePart(L2, lf, log); touched.add(L2); } }); });
+    } else n += linePart(l, f, log);
+    if (n && !opts.quiet) GV.toast('اتحدّث تلقائي: ' + [...new Set(log)].slice(0, 6).join('، ') + (new Set(log).size > 6 ? '…' : ''), 2500);
+    return { n, touched: [...touched] };
+  }
+  // whole layers on demand
+  function recalcLayers(ls) { let n = 0; ls.forEach(l => l.features.forEach(f => { const log = []; n += (l.kind === 'point' ? pointPart(l, f, log) : l.kind === 'line' ? linePart(l, f, log) : 0); })); return n; }
+  GV.recalcDerived = recalc; GV.recalcLayers = recalcLayers; GV.deriveRE = RE;
+})();
+
+</script>
+<script>
 /* Network standards library: components, structure and topology of each infrastructure network, taken from official /
    authoritative sources (SEC distribution planning standards, CST OSP technical standards, EXPRO national utility design aids,
    Esri Utility Network foundations, Jeddah Stormwater Design Manual, Gulf utility guidelines), plus the extra QC checks they imply.
@@ -8815,11 +8953,11 @@ return ret;
   };
   // ---- the extra checks (id, network(s), severity, Arabic title, source, ask = needs Ahmed's decision)
   const RULES = [
-    { id: 'S_SPACING', nets: ['sewer'], sev: 'warn', t: 'المسافة بين غرفتين أكبر من المسموح للقطر', d: '≤ 600 مم: 100 م · ≤ 1200 مم: 120 م · أكبر: 150 م', src: 'gulfS' },
+    { id: 'S_SPACING', def: false, nets: ['sewer'], sev: 'warn', t: 'المسافة بين غرفتين أكبر من المسموح للقطر', d: '≤ 600 مم: 100 م · ≤ 1200 مم: 120 م · أكبر: 150 م', src: 'gulfS' },
     { id: 'ST_SPACING', nets: ['storm'], sev: 'warn', t: 'المسافة بين غرفتين أكبر من المسموح (تصريف أمطار)', d: '< 1500 مم: 100 م · ≥ 1500 مم: 250 م', src: 'jed' },
-    { id: 'G_MAINJUNC', nets: ['sewer', 'storm'], sev: 'warn', t: 'خطين رئيسيين بيتلاقوا من غير غرفة', d: 'التلاقي بين خطين رئيسيين لازم يبقى في غرفة (الوصلات المنزلية على واي مش داخلة)', src: 'gulfS', ask: 1 },
+    { id: 'G_MAINJUNC', nets: ['storm'], sev: 'warn', t: 'خطين رئيسيين بيتلاقوا من غير غرفة', d: 'التلاقي بين خطين رئيسيين لازم يبقى في غرفة. في الصرف التلاقي على واي مسموح (قرار أحمد) فالقاعدة دي للأمطار بس', src: 'gulfS' },
     { id: 'G_DIACHG', nets: ['sewer', 'storm'], sev: 'warn', t: 'تغيير قطر في نص الخط من غير غرفة', d: 'خطين ورا بعض بقطرين مختلفين ومفيش غرفة بينهم', src: 'gulfS' },
-    { id: 'ST_MINDIA', nets: ['storm'], sev: 'info', t: 'قطر خط الأمطار أقل من الحد الأدنى', d: 'رئيسي < 600 مم أو فرعي < 450 مم (دليل جدة) — لو المخطط مش في جدة اقفل القاعدة', src: 'jed', ask: 1 },
+    { id: 'ST_MINDIA', def: false, nets: ['storm'], sev: 'info', t: 'قطر خط الأمطار أقل من الحد الأدنى', d: 'رئيسي < 600 مم أو فرعي < 450 مم (دليل جدة) — مقفولة: المشروع مش ماشي على دليل جدة', src: 'jed' },
     { id: 'W_HYDVALVE', nets: ['water'], sev: 'warn', t: 'فرعة حنفية الحريق مفيهاش محبس عزل', d: 'الحنفية بتتوصل بفرعة عليها محبس (Hydrant with service and valve)', src: 'esriW' },
     { id: 'P_PILLAR', nets: ['power'], sev: 'err', t: 'بيلر عليه كابلات أكتر من سعته', d: 'أقصى 7: مدخلين + 5 مخارج', src: 'secpil' },
     { id: 'P_VDROP', nets: ['power'], sev: 'warn', t: 'كابل جهد منخفض أطول من حد هبوط الجهد', d: '300 مم²: 295 م · 185: 276 م · 70: 201 م (5% عند السعة المؤكدة)', src: 'sec' },
@@ -8834,8 +8972,11 @@ return ret;
     { id: 'I_LATVALVE', nets: ['irrigation'], sev: 'warn', t: 'خط ري فرعي متوصل بالرئيسي من غير محبس تحكم', d: 'الفرعي بيبدأ من محبس التحكم (سولينويد) مش من الرئيسي مباشرة', src: 'expro' }
   ];
   const OFFK = 'gv_stdoff';
-  const off = () => { try { return new Set(JSON.parse(localStorage.getItem(OFFK) || '[]')); } catch (e) { return new Set(); } };
-  const setOff = s => { try { localStorage.setItem(OFFK, JSON.stringify([...s])); } catch (e) { } };
+  const ONK = 'gv_stdon';
+  const rd = k => { try { return new Set(JSON.parse(localStorage.getItem(k) || '[]')); } catch (e) { return new Set(); } };
+  // a rule is off when switched off, or when it is off by default (def:false) and not switched on
+  const off = () => { const o = rd(OFFK), n = rd(ONK); RULES.forEach(r => { if (r.def === false && !n.has(r.id)) o.add(r.id); }); return o; };
+  const setOff = s => { try { localStorage.setItem(OFFK, JSON.stringify([...s].filter(id => { const r = RULES.find(x => x.id === id); return !(r && r.def === false); }))); localStorage.setItem(ONK, JSON.stringify(RULES.filter(r => r.def === false && !s.has(r.id)).map(r => r.id))); } catch (e) { } };
 
   // ---- checks; h = helpers handed over by netqc.run
   function run(h) {
