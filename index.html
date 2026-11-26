@@ -3440,6 +3440,7 @@ return ret;
       const del = el('button', 'chip', '🗑 امسح المحدد'); del.title = 'امسح الطبقات المعلّم عليها من الشغل (الملفات الأصلية مبتتلمسش)'; del.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; removeLayers(ls); };
       const keep = el('button', 'chip', '★ سيب المحدد بس'); keep.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const ls = [...lgSel]; lgSel = null; keepOnly(ls, ls.length + ' طبقة'); };
       const okc = el('button', 'chip ok', 'تمام وكمّل جروب تاني'); okc.onclick = () => { const save = lgSel; ok.onclick(); if (lgSel === null && save.size) { lgSel = new Set(); renderLayers(); const i2 = document.querySelector('.lg-bar input'); if (i2) i2.focus(); } };
+      nm.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); (e.shiftKey ? okc : ok).onclick(); } }); nm.title = 'Enter = تمام · Shift+Enter = تمام وكمّل جروب تاني';
       bar.append(nm, sel, ok, okc, del, keep, cn);
     }
     box.appendChild(bar);
@@ -5875,7 +5876,8 @@ return ret;
 (function () {
   'use strict';
   const GV = window.GV; const { $, el } = GV;
-  const dataLayers = () => GV.sources.filter(s => s.id !== 'qc').flatMap(s => s.layers.filter(l => l.features.length).map(l => ({ l, s })));
+  const DP = { mode: 'all' }; // dashboard data scope (shared picker from boq.js)
+  const dataLayers = () => { const all = GV.sources.filter(s => s.id !== 'qc').flatMap(s => s.layers.filter(l => l.features.length).map(l => ({ l, s }))); if (DP.mode === 'all' || !GV.pickedLayers) return all; const keep = new Set(GV.pickedLayers(DP)); return all.filter(x => keep.has(x.l)); };
   function lenOf(l, f) { if (!f.wgs || !f.wgs.geometry) return 0; const t = f.wgs.geometry.type; return t.indexOf('LineString') >= 0 ? GV.lineLen(f.wgs.geometry) : 0; }
   function layerStats(l) { let len = 0, area = 0; const n = l.features.filter(f => !f._sym).length; if (l.kind === 'line' || l.kind === 'mixed') l.features.forEach(f => { if (!f._sym) len += lenOf(l, f); }); if (l.kind === 'polygon') l.features.forEach(f => { if (f.wgs && f.wgs.geometry && f.wgs.geometry.type.indexOf('Polygon') >= 0) area += GV.polyArea(f.wgs.geometry); }); return { n, len, area }; }
   function groupBy(l, field) {
@@ -5896,6 +5898,7 @@ return ret;
   let dLayer = null, dField = null;
   function render() {
     const box = $('#dashBody'); box.textContent = '';
+    if (GV.dataPicker) box.appendChild(GV.dataPicker(DP, render));
     const ls = dataLayers();
     if (!ls.length) { box.appendChild(el('p', 'muted', 'افتح داتا الأول علشان الداشبورد يتملي.')); return; }
     const st = ls.map(({ l, s }) => ({ l, s, ...layerStats(l) }));
@@ -9306,20 +9309,31 @@ return ret;
   sh.innerHTML = '<div class="grab"></div><div class="sh-head"><h2>📊 جدول الكميات</h2><button class="icon-btn" data-close>✕</button></div><div class="sh-body" id="boqBody"></div>';
   document.body.appendChild(sh); sh.querySelector('[data-close]').onclick = () => sh.classList.remove('open');
   let pick = { mode: 'all', group: null, layers: null };
-  const allL = () => GV.sources.filter(s => s.id !== 'qc' && s.id !== 'field').flatMap(s => s.layers).filter(l => l.features && l.features.length && !(GV.superseded && GV.superseded(GV.sources.find(s => s.layers.indexOf(l) >= 0))));
-  const chosen = () => pick.mode === 'group' ? ((GV.groupsList().find(g => g.id === pick.group) || {}).layers || []).filter(l => l.features.length) : pick.mode === 'layers' ? (pick.layers || []).filter(l => allL().indexOf(l) >= 0) : allL();
+  // ---- shared data picker (BOQ + dashboard): outside file · all · a group · chosen layers (inside the data or the group) ----
+  const allL0 = () => GV.sources.filter(s => s.id !== 'qc' && s.id !== 'field').flatMap(s => s.layers).filter(l => l.features && l.features.length && !(GV.superseded && GV.superseded(GV.sources.find(s => s.layers.indexOf(l) >= 0))));
+  GV.pickedLayers = st => st.mode === 'group' ? ((GV.groupsList().find(g => g.id === st.group) || {}).layers || []).filter(l => l.features.length) : st.mode === 'layers' ? (st.layers || []).filter(l => allL0().indexOf(l) >= 0) : allL0();
+  GV.dataPicker = (st, redraw) => {
+    const wrap = el('div'); const bar = el('div', 'qc-filt');
+    const ch = (t, on, fn) => { const b = el('button', 'chip' + (on ? ' on' : ''), t); b.onclick = fn; bar.appendChild(b); };
+    ch('📂 ملف من برا', false, () => { GV._pickPending = added => { const ls = (added || []).flatMap(s => s.layers || []).filter(l => l.features && l.features.length); if (ls.length) { st.mode = 'layers'; st.layers = ls; st.group = null; } redraw(); }; GV.pickData(); });
+    ch('كل الطبقات المفتوحة', st.mode === 'all', () => { st.mode = 'all'; redraw(); });
+    GV.groupsList().forEach(g => ch('📁 ' + g.name + ' (' + g.layers.length + ')', st.mode === 'group' && st.group === g.id, () => { st.mode = 'group'; st.group = g.id; redraw(); }));
+    const base = st.mode === 'group' ? GV.pickedLayers(st) : allL0();
+    ch('☑ أختار طبقات' + (st.mode === 'group' ? ' من الجروب' : ''), st.mode === 'layers', () => { const fromG = st.mode === 'group'; st.layers = (fromG ? GV.pickedLayers(st) : allL0()).slice(); st._pool = fromG ? st.layers.slice() : null; st.mode = 'layers'; redraw(); });
+    wrap.appendChild(bar);
+    if (st.mode === 'layers') { const lst = el('div', 'boq-pick'); const pool = st._pool && st._pool.length ? st._pool : allL0(); st._pool = pool;
+      const srcName = l => (GV.sources.find(s => s.layers.indexOf(l) >= 0) || {}).name || '';
+      pool.forEach(l => { const lb = el('label'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = st.layers.indexOf(l) >= 0; cb.onchange = () => { if (cb.checked) st.layers.push(l); else st.layers = st.layers.filter(x => x !== l); redraw(); }; lb.append(cb, document.createTextNode(' ' + l.name), el('span', 'muted small', '  ' + srcName(l))); lst.appendChild(lb); });
+      const all = el('button', 'chip', 'الكل'), none = el('button', 'chip', 'ولا حاجة'); all.onclick = () => { st.layers = pool.slice(); redraw(); }; none.onclick = () => { st.layers = []; redraw(); };
+      const r = el('div', 'fc-acts'); r.append(all, none); wrap.append(r, lst); }
+    return wrap;
+  };
+  const chosen = () => GV.pickedLayers(pick);
   function render() {
     const box = $('#boqBody'); box.textContent = '';
     // 1) which data
     const s1 = el('div', 'step'); s1.appendChild(el('b', null, '1. الداتا'));
-    const bar = el('div', 'qc-filt');
-    const ch = (t, on, fn) => { const b = el('button', 'chip' + (on ? ' on' : ''), t); b.onclick = fn; bar.appendChild(b); };
-    ch('📂 ملف من برا', false, () => { GV._boqPending = true; GV.pickData(); });
-    ch('كل الطبقات المفتوحة', pick.mode === 'all', () => { pick = { mode: 'all' }; render(); });
-    GV.groupsList().forEach(g => ch('📁 ' + g.name + ' (' + g.layers.length + ')', pick.mode === 'group' && pick.group === g.id, () => { pick = { mode: 'group', group: g.id }; render(); }));
-    ch('☑ أختار طبقات', pick.mode === 'layers', () => { pick = { mode: 'layers', layers: pick.layers || allL().slice() }; render(); });
-    s1.appendChild(bar);
-    if (pick.mode === 'layers') { const lst = el('div', 'boq-pick'); allL().forEach(l => { const lb = el('label'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = pick.layers.indexOf(l) >= 0; cb.onchange = () => { if (cb.checked) pick.layers.push(l); else pick.layers = pick.layers.filter(x => x !== l); render(); }; lb.append(cb, document.createTextNode(' ' + l.name)); lst.appendChild(lb); }); s1.appendChild(lst); }
+    s1.appendChild(GV.dataPicker(pick, render));
     box.appendChild(s1);
     const ls = chosen();
     if (!ls.length) { box.appendChild(el('p', 'muted', 'مفيش طبقات — افتح ملف أو اختار جروب.')); GV.openSheet('#boqSheet'); return; }
@@ -9349,7 +9363,7 @@ return ret;
   }
   GV.openBOQ = render;
   // a file opened from the BOQ screen → its layers become the selection
-  const prevAfter = GV.afterOpen; GV.afterOpen = added => { if (GV._boqPending) { GV._boqPending = false; const ls = (added || []).flatMap(s => s.layers || []).filter(l => l.features && l.features.length); if (ls.length) { pick = { mode: 'layers', layers: ls }; setTimeout(render, 300); } return; } if (prevAfter) prevAfter(added); };
+  const prevAfter = GV.afterOpen; GV.afterOpen = added => { if (GV._pickPending) { const cb = GV._pickPending; GV._pickPending = null; setTimeout(() => cb(added), 300); return; } if (prevAfter) prevAfter(added); };
   { const tools = document.querySelector('#toolsSheet .tools'); if (tools) { const b = el('button', 'tool'); b.innerHTML = '<span>📊</span><b>جدول الكميات</b><small>مواسير بالقطر، محابس وقطع بالتصنيف — من ملف أو جروب</small>'; b.onclick = () => render(); tools.insertBefore(b, tools.firstChild); } }
   const st = document.createElement('style'); st.textContent = '.boq-cfg{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.boq-cfg select{grid-column:span 3;width:100%}.boq-pick{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;margin-top:6px}.boq-t td.num{text-align:end;font-variant-numeric:tabular-nums}.boq-t tr.tot td{font-weight:700;border-top:2px solid var(--line)}';
   document.head.appendChild(st);
