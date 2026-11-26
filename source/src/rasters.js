@@ -122,6 +122,7 @@
       const rec = { id: rid(), name: main.name, kind: '' };
       if (/\.mbtiles$/.test(n)) { const r = await openMBTiles(main); addLeaf(rec, r.leaf); if (r.bounds) GV.map.fitBounds(r.bounds); GV.toast('اتفتح: ' + main.name + ' (بيتعرض لحد ما تقفل البرنامج — الملف كبير على الحفظ)', 5000); return; }
       if (/\.(tpkx?|zip)$/.test(n)) { const r = await openTPK(main); addLeaf(rec, r.leaf); GV.toast('اتفتح: ' + main.name + ' — قرّب على منطقة الشغل', 5000); return; }
+      if (/\.xml$/.test(n) && !/\.aux\.xml$/.test(n) && files.length === 1) { const head = await main.slice(0, 4000).text(); if (/LandXML/i.test(head)) { $b.classList.remove('show'); if (GV.openSurfaceFile) { await GV.openSurfaceFile(main, crsCode); GV.toast('⛰️ ده ملف LandXML — دخل كسطح مناسيب. استخدمه من "مناسيب من سطح" أو "بروفايل طولي"', 7000); } return; } }
       if (/\.km[lz]$/.test(n)) { const r = await openKMZ(main); if (!r) return GV.handleFiles ? GV.handleFiles([main]) : null; addLeaf(rec, r.leaf); return; }
       let buf;
       if (/\.tiff?$/.test(n) && files.length === 1) buf = await main.arrayBuffer();
@@ -131,7 +132,7 @@
       Object.assign(rec, { blob: r.blob, bounds: r.bounds, kind: 'img' }); showImage(rec); GV.map.fitBounds(r.bounds); put(rec.id, { name: rec.name, blob: r.blob, bounds: r.bounds, kind: 'img' });
       if (r.single && GV.addDemBuffer) { try { await GV.addDemBuffer(buf, main.name, r.crsCode); GV.toast('اتعرضت: ' + main.name + ' — ودخلت كمان كسطح مناسيب (DEM) تقدر تاخد منه منسوب الأرض', 6000); } catch (e) { GV.toast('اتعرضت: ' + main.name, 4000); } }
       else GV.toast('اتعرضت: ' + main.name, 4000);
-    } catch (e) { GV.showMsg('مقدرتش أفتح ' + main.name + ':\n' + (e.message || e)); }
+    } catch (e) { GV.showMsg('مقدرتش أفتح ' + main.name + ':\n' + (e && e.message ? e.message : typeof e === 'object' ? 'GDAL مش عارف يقرا الصيغة دي' : e)); }
     finally { $b.classList.remove('show'); }
   };
   setTimeout(async () => { for (const [k, v] of await all()) if (v && v.blob) showImage({ id: k, name: v.name, blob: v.blob, bounds: v.bounds, kind: v.kind }); }, 1200);

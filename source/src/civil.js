@@ -72,10 +72,17 @@
   }
   function landXmlSurface(name, txt, crsCode) {
     const crs = GV.resolveCRS(crsCode); if (!crs) throw new Error('اختار نظام إحداثيات الـ LandXML');
-    const doc = new DOMParser().parseFromString(txt, 'text/xml'); const surf = doc.querySelector('Surface'); if (!surf) return null;
+    const doc = new DOMParser().parseFromString(txt, 'text/xml');
+    const surfs = [...doc.getElementsByTagName('Surface')].filter(x => x.getElementsByTagName('P').length);
+    if (!surfs.length) { // no TIN inside: build one from the survey points (CgPoints) of the file
+      const pts = []; [...doc.getElementsByTagName('CgPoint')].forEach(p => { const v = p.textContent.trim().split(/\s+/).map(Number); if (v.length >= 3 && v.every(isFinite)) { const ll = crs.fn([v[1], v[0]]); pts.push([ll[0], ll[1], v[2]]); } });
+      if (pts.length >= 3) return tinSurface(name, pts, +(GV.store.get('gv_tinedge') || 60));
+      return null;
+    }
+    const surf = surfs.sort((a, b) => b.getElementsByTagName('P').length - a.getElementsByTagName('P').length)[0];
     const ids = new Map(), pts = [];
-    surf.querySelectorAll('Pnts > P').forEach(p => { const v = p.textContent.trim().split(/\s+/).map(Number); if (v.length < 3) return; const ll = crs.fn([v[1], v[0]]); ids.set(p.getAttribute('id'), pts.length); pts.push([ll[0], ll[1], v[2]]); }); // LandXML: northing easting elevation
-    const faces = []; surf.querySelectorAll('Faces > F').forEach(f => { if (f.getAttribute('i') === '1') return; const v = f.textContent.trim().split(/\s+/); if (v.length < 3) return; const a = ids.get(v[0]), b = ids.get(v[1]), c = ids.get(v[2]); if (a != null && b != null && c != null) faces.push(a, b, c); });
+    [...surf.getElementsByTagName('P')].forEach(p => { const v = p.textContent.trim().split(/\s+/).map(Number); if (v.length < 3) return; const ll = crs.fn([v[1], v[0]]); ids.set(p.getAttribute('id'), pts.length); pts.push([ll[0], ll[1], v[2]]); }); // LandXML: northing easting elevation
+    const faces = []; [...surf.getElementsByTagName('F')].forEach(f => { if (f.getAttribute('i') === '1') return; const v = f.textContent.trim().split(/\s+/); if (v.length < 3) return; const a = ids.get(v[0]), b = ids.get(v[1]), c = ids.get(v[2]); if (a != null && b != null && c != null) faces.push(a, b, c); });
     return tinSurface((surf.getAttribute('name') || name), pts, 0, faces.length ? faces : null);
   }
   function xyzSurface(name, txt, crsCode, maxEdge) {
@@ -104,6 +111,7 @@
   function showSurface(s) { if (surfLeaf) GV.map.removeLayer(surfLeaf); surfLeaf = null; if (!s) return; surfLeaf = L.rectangle(s.bounds, { color: '#b5651d', weight: 1.5, dashArray: '6 4', fill: false, interactive: false }).addTo(GV.map); }
   function addSurface(s) { SURF.push(s); GV.toast('⛰️ اتحمّل السطح: ' + s.name + ' — مناسيب من ' + s.zmin.toFixed(2) + ' لـ ' + s.zmax.toFixed(2), 5000); showSurface(s); try { GV.map.fitBounds(s.bounds, { maxZoom: 17 }); } catch (e) { } }
   GV.surfaceAt = (s, lon, lat) => s.sample(lon, lat);
+  GV.openSurfaceFile = async (file, crsCode) => openSurfaceFile(file, crsCode, +(GV.store.get('gv_tinedge') || 60));
   GV.addDemBuffer = async (buf, name, crsCode) => { const s = await demSurface(name, buf, crsCode); addSurface(s); return s; };
   // a surface opened from a file
   async function openSurfaceFile(file, crsCode, maxEdge) {
@@ -113,7 +121,7 @@
       if (/\.tiff?$/.test(n)) s = await demSurface(file.name, await file.arrayBuffer(), crsCode);
       else if (/\.xml$/.test(n)) s = landXmlSurface(file.name, await file.text(), crsCode);
       else s = xyzSurface(file.name, await file.text(), crsCode, maxEdge);
-      if (!s) throw new Error('الملف مفيهوش سطح');
+      if (!s) throw new Error('الملف مفيهوش سطح ولا نقاط رفع بمناسيب (LandXML Surface أو CgPoints)');
       addSurface(s); return s;
     } finally { $('#busy').classList.remove('show'); }
   }

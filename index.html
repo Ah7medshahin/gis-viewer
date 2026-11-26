@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <script type="application/json" id="claude-artifacts-manifest">{"permissions": ["full-access"]}</script>
-<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v30";
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><script>if(/github\.io$/.test(location.hostname)){window.GV_VER="v31";
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").then(r=>{window.GV_SWR=r}).catch(()=>{});
 const gvApply=v=>{const go=()=>location.replace(location.pathname+"?u="+v);Promise.all([window.caches?caches.keys().then(k=>Promise.all(k.map(x=>caches.delete(x)))):0,window.GV_SWR?GV_SWR.update().catch(()=>{}):0]).then(go,go)};
 const gvBar=v=>{if(document.getElementById("gvUpd")||!document.body)return;const b=document.createElement("div");b.id="gvUpd";b.textContent="🔄 فيه تحديث جديد للبرنامج — دوس هنا عشان يتحدّث";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#1565c0;color:#fff;padding:12px 18px;border-radius:24px;font:600 15px system-ui;box-shadow:0 4px 16px #0006;cursor:pointer;direction:rtl;max-width:92vw;text-align:center";b.onclick=()=>{b.textContent="⏳ بيتحدّث...";gvApply(v)};document.body.appendChild(b)};
@@ -9944,6 +9944,7 @@ lerc/LercDecode.js:
       const rec = { id: rid(), name: main.name, kind: '' };
       if (/\.mbtiles$/.test(n)) { const r = await openMBTiles(main); addLeaf(rec, r.leaf); if (r.bounds) GV.map.fitBounds(r.bounds); GV.toast('اتفتح: ' + main.name + ' (بيتعرض لحد ما تقفل البرنامج — الملف كبير على الحفظ)', 5000); return; }
       if (/\.(tpkx?|zip)$/.test(n)) { const r = await openTPK(main); addLeaf(rec, r.leaf); GV.toast('اتفتح: ' + main.name + ' — قرّب على منطقة الشغل', 5000); return; }
+      if (/\.xml$/.test(n) && !/\.aux\.xml$/.test(n) && files.length === 1) { const head = await main.slice(0, 4000).text(); if (/LandXML/i.test(head)) { $b.classList.remove('show'); if (GV.openSurfaceFile) { await GV.openSurfaceFile(main, crsCode); GV.toast('⛰️ ده ملف LandXML — دخل كسطح مناسيب. استخدمه من "مناسيب من سطح" أو "بروفايل طولي"', 7000); } return; } }
       if (/\.km[lz]$/.test(n)) { const r = await openKMZ(main); if (!r) return GV.handleFiles ? GV.handleFiles([main]) : null; addLeaf(rec, r.leaf); return; }
       let buf;
       if (/\.tiff?$/.test(n) && files.length === 1) buf = await main.arrayBuffer();
@@ -9953,7 +9954,7 @@ lerc/LercDecode.js:
       Object.assign(rec, { blob: r.blob, bounds: r.bounds, kind: 'img' }); showImage(rec); GV.map.fitBounds(r.bounds); put(rec.id, { name: rec.name, blob: r.blob, bounds: r.bounds, kind: 'img' });
       if (r.single && GV.addDemBuffer) { try { await GV.addDemBuffer(buf, main.name, r.crsCode); GV.toast('اتعرضت: ' + main.name + ' — ودخلت كمان كسطح مناسيب (DEM) تقدر تاخد منه منسوب الأرض', 6000); } catch (e) { GV.toast('اتعرضت: ' + main.name, 4000); } }
       else GV.toast('اتعرضت: ' + main.name, 4000);
-    } catch (e) { GV.showMsg('مقدرتش أفتح ' + main.name + ':\n' + (e.message || e)); }
+    } catch (e) { GV.showMsg('مقدرتش أفتح ' + main.name + ':\n' + (e && e.message ? e.message : typeof e === 'object' ? 'GDAL مش عارف يقرا الصيغة دي' : e)); }
     finally { $b.classList.remove('show'); }
   };
   setTimeout(async () => { for (const [k, v] of await all()) if (v && v.blob) showImage({ id: k, name: v.name, blob: v.blob, bounds: v.bounds, kind: v.kind }); }, 1200);
@@ -10035,10 +10036,17 @@ lerc/LercDecode.js:
   }
   function landXmlSurface(name, txt, crsCode) {
     const crs = GV.resolveCRS(crsCode); if (!crs) throw new Error('اختار نظام إحداثيات الـ LandXML');
-    const doc = new DOMParser().parseFromString(txt, 'text/xml'); const surf = doc.querySelector('Surface'); if (!surf) return null;
+    const doc = new DOMParser().parseFromString(txt, 'text/xml');
+    const surfs = [...doc.getElementsByTagName('Surface')].filter(x => x.getElementsByTagName('P').length);
+    if (!surfs.length) { // no TIN inside: build one from the survey points (CgPoints) of the file
+      const pts = []; [...doc.getElementsByTagName('CgPoint')].forEach(p => { const v = p.textContent.trim().split(/\s+/).map(Number); if (v.length >= 3 && v.every(isFinite)) { const ll = crs.fn([v[1], v[0]]); pts.push([ll[0], ll[1], v[2]]); } });
+      if (pts.length >= 3) return tinSurface(name, pts, +(GV.store.get('gv_tinedge') || 60));
+      return null;
+    }
+    const surf = surfs.sort((a, b) => b.getElementsByTagName('P').length - a.getElementsByTagName('P').length)[0];
     const ids = new Map(), pts = [];
-    surf.querySelectorAll('Pnts > P').forEach(p => { const v = p.textContent.trim().split(/\s+/).map(Number); if (v.length < 3) return; const ll = crs.fn([v[1], v[0]]); ids.set(p.getAttribute('id'), pts.length); pts.push([ll[0], ll[1], v[2]]); }); // LandXML: northing easting elevation
-    const faces = []; surf.querySelectorAll('Faces > F').forEach(f => { if (f.getAttribute('i') === '1') return; const v = f.textContent.trim().split(/\s+/); if (v.length < 3) return; const a = ids.get(v[0]), b = ids.get(v[1]), c = ids.get(v[2]); if (a != null && b != null && c != null) faces.push(a, b, c); });
+    [...surf.getElementsByTagName('P')].forEach(p => { const v = p.textContent.trim().split(/\s+/).map(Number); if (v.length < 3) return; const ll = crs.fn([v[1], v[0]]); ids.set(p.getAttribute('id'), pts.length); pts.push([ll[0], ll[1], v[2]]); }); // LandXML: northing easting elevation
+    const faces = []; [...surf.getElementsByTagName('F')].forEach(f => { if (f.getAttribute('i') === '1') return; const v = f.textContent.trim().split(/\s+/); if (v.length < 3) return; const a = ids.get(v[0]), b = ids.get(v[1]), c = ids.get(v[2]); if (a != null && b != null && c != null) faces.push(a, b, c); });
     return tinSurface((surf.getAttribute('name') || name), pts, 0, faces.length ? faces : null);
   }
   function xyzSurface(name, txt, crsCode, maxEdge) {
@@ -10067,6 +10075,7 @@ lerc/LercDecode.js:
   function showSurface(s) { if (surfLeaf) GV.map.removeLayer(surfLeaf); surfLeaf = null; if (!s) return; surfLeaf = L.rectangle(s.bounds, { color: '#b5651d', weight: 1.5, dashArray: '6 4', fill: false, interactive: false }).addTo(GV.map); }
   function addSurface(s) { SURF.push(s); GV.toast('⛰️ اتحمّل السطح: ' + s.name + ' — مناسيب من ' + s.zmin.toFixed(2) + ' لـ ' + s.zmax.toFixed(2), 5000); showSurface(s); try { GV.map.fitBounds(s.bounds, { maxZoom: 17 }); } catch (e) { } }
   GV.surfaceAt = (s, lon, lat) => s.sample(lon, lat);
+  GV.openSurfaceFile = async (file, crsCode) => openSurfaceFile(file, crsCode, +(GV.store.get('gv_tinedge') || 60));
   GV.addDemBuffer = async (buf, name, crsCode) => { const s = await demSurface(name, buf, crsCode); addSurface(s); return s; };
   // a surface opened from a file
   async function openSurfaceFile(file, crsCode, maxEdge) {
@@ -10076,7 +10085,7 @@ lerc/LercDecode.js:
       if (/\.tiff?$/.test(n)) s = await demSurface(file.name, await file.arrayBuffer(), crsCode);
       else if (/\.xml$/.test(n)) s = landXmlSurface(file.name, await file.text(), crsCode);
       else s = xyzSurface(file.name, await file.text(), crsCode, maxEdge);
-      if (!s) throw new Error('الملف مفيهوش سطح');
+      if (!s) throw new Error('الملف مفيهوش سطح ولا نقاط رفع بمناسيب (LandXML Surface أو CgPoints)');
       addSurface(s); return s;
     } finally { $('#busy').classList.remove('show'); }
   }
