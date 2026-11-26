@@ -117,9 +117,9 @@
     u.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
     b.append(u, tk, go, out);
     b.appendChild(el('div', 'tsec', '📂 من ملف عندك (رفع مساحي)'));
-    b.appendChild(el('p', 'muted small', 'صورة جوية/أورثو (TIF، JPG أو PNG مع ملف الـ world، JP2، IMG…)، DEM، باكدج Tiles (TPKX / TPK / MBTiles) أو KMZ. لو الصورة معاها ملفات (.jgw .tfw .prj) اختارهم كلهم مع بعض.'));
+    b.appendChild(el('p', 'muted small', 'صورة جوية/أورثو (TIF، JPG أو PNG مع ملف الـ world، JP2، IMG…)، DEM بأي صيغة (TIF، IMG، ASC، HGT، DTED، BIL، GRD…)، سطح Civil (LandXML)، باكدج Tiles (TPKX / TPK / MBTiles) أو KMZ. لو الصورة معاها ملفات (.jgw .tfw .prj) اختارهم كلهم مع بعض.'));
     const cs = el('select'); GV.CRS_CHOICES.forEach(([c, l]) => { const o = el('option', '', l); o.value = c; cs.appendChild(o); }); cs.value = GV.store.get('gv_crs') || '32638'; cs.onchange = () => GV.store.set('gv_crs', cs.value);
-    const fi = el('input'); fi.type = 'file'; fi.multiple = true; fi.accept = '.tif,.tiff,.jpg,.jpeg,.png,.jp2,.img,.asc,.ecw,.sid,.jgw,.pgw,.tfw,.wld,.j2w,.prj,.xml,.ovr,.tpk,.tpkx,.mbtiles,.kmz,.kml,.vrt,.bil,.dem,.hgt'; fi.style.display = 'none';
+    const fi = el('input'); fi.type = 'file'; fi.multiple = true; fi.removeAttribute('accept'); // any raster GDAL can read fi.style.display = 'none';
     const fb = el('button', 'chip done', '📂 اختار الملف'); fb.onclick = () => fi.click(); fi.onchange = async () => { await GV.openLocalRaster(fi.files, cs.value); fi.value = ''; render(); };
     const rr = el('div', 'mp-btns'); rr.append(fb, el('span', 'small', 'نظامه لو مش جواه:'), cs, fi); b.appendChild(rr);
     (GV.localRasters || []).forEach(r => { const row = el('div', 'svc-row'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = GV.map.hasLayer(r.leaf); ck.onchange = () => { if (ck.checked) r.leaf.addTo(GV.map); else GV.map.removeLayer(r.leaf); };

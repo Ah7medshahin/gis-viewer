@@ -129,9 +129,9 @@
       else { $t.textContent = 'بحمّل محرك GDAL…'; buf = await viaGdal(files); }
       $t.textContent = 'بحط الصورة على الخريطة…';
       let r; try { r = await rasterFromTiff(buf, main.name, crsCode); } catch (e) { if (/\.tiff?$/.test(n) && files.length === 1 && !/إحداثيات/.test(e.message)) { buf = await viaGdal(files); r = await rasterFromTiff(buf, main.name, crsCode); } else throw e; }
+      if (r.single && GV.addDemBuffer) { try { const sf = await GV.addDemBuffer(buf, main.name, r.crsCode); GV.map.fitBounds(sf.bounds); GV.toast('⛰️ ' + main.name + ' ملف مناسيب (DEM) — اتعرض ألوان + هيل شيد، وتقدر تاخد منه منسوب الأرض أو تعمل كنتور من "أسطح وراسترات المناسيب"', 7000); return; } catch (e) { } }
       Object.assign(rec, { blob: r.blob, bounds: r.bounds, kind: 'img' }); showImage(rec); GV.map.fitBounds(r.bounds); put(rec.id, { name: rec.name, blob: r.blob, bounds: r.bounds, kind: 'img' });
-      if (r.single && GV.addDemBuffer) { try { await GV.addDemBuffer(buf, main.name, r.crsCode); GV.toast('اتعرضت: ' + main.name + ' — ودخلت كمان كسطح مناسيب (DEM) تقدر تاخد منه منسوب الأرض', 6000); } catch (e) { GV.toast('اتعرضت: ' + main.name, 4000); } }
-      else GV.toast('اتعرضت: ' + main.name, 4000);
+      GV.toast('اتعرضت: ' + main.name, 4000);
     } catch (e) { GV.showMsg('مقدرتش أفتح ' + main.name + ':\n' + (e && e.message ? e.message : typeof e === 'object' ? 'GDAL مش عارف يقرا الصيغة دي' : e)); }
     finally { $b.classList.remove('show'); }
   };

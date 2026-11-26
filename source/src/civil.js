@@ -109,20 +109,23 @@
   }
   let surfLeaf = null;
   function showSurface(s) { if (surfLeaf) GV.map.removeLayer(surfLeaf); surfLeaf = null; if (!s) return; surfLeaf = L.rectangle(s.bounds, { color: '#b5651d', weight: 1.5, dashArray: '6 4', fill: false, interactive: false }).addTo(GV.map); }
-  function addSurface(s) { SURF.push(s); GV.toast('⛰️ اتحمّل السطح: ' + s.name + ' — مناسيب من ' + s.zmin.toFixed(2) + ' لـ ' + s.zmax.toFixed(2), 5000); showSurface(s); try { GV.map.fitBounds(s.bounds, { maxZoom: 17 }); } catch (e) { } }
+  function addSurface(s, quiet) { SURF.push(s); if (quiet) return; GV.toast('⛰️ اتحمّل السطح: ' + s.name + ' — مناسيب من ' + s.zmin.toFixed(2) + ' لـ ' + s.zmax.toFixed(2), 5000); showSurface(s); try { GV.map.fitBounds(s.bounds, { maxZoom: 17 }); } catch (e) { } }
   GV.surfaceAt = (s, lon, lat) => s.sample(lon, lat);
-  GV.openSurfaceFile = async (file, crsCode) => openSurfaceFile(file, crsCode, +(GV.store.get('gv_tinedge') || 60));
-  GV.addDemBuffer = async (buf, name, crsCode) => { const s = await demSurface(name, buf, crsCode); addSurface(s); return s; };
+  GV.openSurfaceFile = async (file, crsCode, quiet) => openSurfaceFile(file, crsCode, +(GV.store.get('gv_tinedge') || 60), quiet);
+  GV.addDemBuffer = async (buf, name, crsCode, quiet) => { const s = await demSurface(name, buf, crsCode); addSurface(s, quiet); if (!quiet && GV.surfKeep) { GV.surfKeep(s, { kind: 'dem', buf, crs: crsCode, size: buf.byteLength }); if (GV.styleSurface) GV.styleSurface(s, 'both', 2); } return s; };
   // a surface opened from a file
-  async function openSurfaceFile(file, crsCode, maxEdge) {
-    const n = file.name.toLowerCase(); $('#busy').classList.add('show'); $('#busyText').textContent = 'بقرا السطح…';
+  async function openSurfaceFile(file, crsCode, maxEdge, quiet) {
+    const n = file.name.toLowerCase(); if (!quiet) { $('#busy').classList.add('show'); $('#busyText').textContent = 'بقرا السطح…'; }
     try {
       let s = null;
+      if (!/\.(tiff?|xml|csv|txt|xyz|pnezd|pts)$/.test(n) && GV.openLocalRaster) { const before = SURF.length; if (!quiet) $('#busy').classList.remove('show'); await GV.openLocalRaster([file], crsCode); if (SURF.length > before) return SURF[SURF.length - 1]; throw new Error('الملف ده مش ملف مناسيب'); }
       if (/\.tiff?$/.test(n)) s = await demSurface(file.name, await file.arrayBuffer(), crsCode);
       else if (/\.xml$/.test(n)) s = landXmlSurface(file.name, await file.text(), crsCode);
       else s = xyzSurface(file.name, await file.text(), crsCode, maxEdge);
       if (!s) throw new Error('الملف مفيهوش سطح ولا نقاط رفع بمناسيب (LandXML Surface أو CgPoints)');
-      addSurface(s); return s;
+      addSurface(s, quiet);
+      if (!quiet && GV.surfKeep) { const bytes = await file.arrayBuffer(); GV.surfKeep(s, /\.tiff?$/.test(n) ? { kind: 'dem', buf: bytes, crs: crsCode, size: bytes.byteLength } : { kind: 'file', bytes, fname: file.name, crs: crsCode, size: bytes.byteLength }); if (GV.styleSurface) GV.styleSurface(s, 'both', 2); }
+      return s;
     } finally { $('#busy').classList.remove('show'); }
   }
 
@@ -154,7 +157,7 @@
     else box.appendChild(el('div', 'muted small', 'لسه مفيش سطح — افتح ملف أو اعمله من طبقة نقاط عندك.'));
     const row = el('div', 'mp-btns');
     const crs = crsSelect(); const me = el('input'); me.type = 'number'; me.value = GV.store.get('gv_tinedge') || 60; me.style.width = '70px'; me.title = 'أطول ضلع مثلث مسموح (م) — يمنع السطح يعدّي فوق فراغات';
-    const fb = el('button', 'chip', '📂 ملف سطح (DEM .tif · LandXML · نقاط CSV/TXT)'); const fi = el('input'); fi.type = 'file'; fi.accept = '.tif,.tiff,.xml,.csv,.txt,.xyz,.pnezd'; fi.style.display = 'none';
+    const fb = el('button', 'chip', '📂 ملف سطح (DEM .tif · LandXML · نقاط CSV/TXT)'); const fi = el('input'); fi.type = 'file'; fi.removeAttribute('accept'); fi.style.display = 'none';
     fb.onclick = () => fi.click(); fi.onchange = async () => { const f = fi.files[0]; if (!f) return; GV.store.set('gv_tinedge', me.value); try { cur = await openSurfaceFile(f, crs.value, +me.value || 0); redraw(); } catch (e) { GV.showMsg('مقدرتش أقرا السطح:\n' + (e.message || e)); } fi.value = ''; };
     row.append(fb, fi); box.appendChild(row);
     const r2 = el('div', 'civ-g'); r2.append(el('span', 'small', 'نظام إحداثيات الملف (لو مش جواه):'), crs, el('span', 'small', 'أطول ضلع (م):'), me); box.appendChild(r2);
