@@ -779,6 +779,8 @@
   };
   const inGroup = l => !!grpOf(l);
   let lgSel = null; // Set of layers while picking
+  let lgAnchor = null; // last clicked box, for Shift+click ranges
+  document.addEventListener('keydown', e => { if (!lgSel || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'a' || /INPUT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return; e.preventDefault(); document.querySelectorAll('.lg-ck').forEach(b => { b.checked = true; lgSel.add(b._layer); }); const n2 = $('#lgN'); if (n2) n2.textContent = lgSel.size; });
   function mkRow(l) {
         const row = el('div', 'lyr' + (l.visible ? '' : ' off'));
         const sw = el('button', 'sw'); sw.style.setProperty('--c', l.color); sw.textContent = KIND_ICON[l.kind] || '●'; sw.title = 'إظهار/إخفاء';
@@ -794,7 +796,16 @@
         if (l.leaf) { const st = el('button', 'icon-btn small', '🎨'); st.title = 'تلوين حسب حقل'; st.onclick = () => openStyle(l, true); acts.appendChild(st); }
         if (l.theme) { const cs = l.theme.classes.slice(0, 6).map(c => c.color); sw.style.setProperty('--c', 'conic-gradient(' + cs.map((c, k) => c + ' ' + (k * 100 / cs.length) + '% ' + ((k + 1) * 100 / cs.length) + '%').join(',') + ')'); }
         const tb = el('button', 'icon-btn small', '☰'); tb.title = 'جدول البيانات'; tb.onclick = () => openTable(l, true); acts.appendChild(tb);
-        if (lgSel) { const cb = el('input'); cb.type = 'checkbox'; cb.className = 'lg-ck'; cb.checked = lgSel.has(l); cb.onchange = () => { if (cb.checked) lgSel.add(l); else lgSel.delete(l); const n2 = $('#lgN'); if (n2) n2.textContent = lgSel.size; }; row.append(cb); }
+        if (lgSel) { const cb = el('input'); cb.type = 'checkbox'; cb.className = 'lg-ck'; cb._layer = l; cb.checked = lgSel.has(l); row.classList.toggle('lg-on', cb.checked);
+          // click = mark one · Shift+click = everything from the last one to here · Ctrl+click = add / remove one
+          const pick = (e, fromBox) => {
+            const boxes = [...document.querySelectorAll('.lg-ck')]; const set = (b, on) => { b.checked = on; if (on) lgSel.add(b._layer); else lgSel.delete(b._layer); { const r0 = b.closest('.lyr'); if (r0) r0.classList.toggle('lg-on', on); } };
+            if (e.shiftKey && lgAnchor && boxes.indexOf(lgAnchor) >= 0) { const a = boxes.indexOf(lgAnchor), b = boxes.indexOf(cb); const [i0, i1] = a < b ? [a, b] : [b, a]; for (let i = i0; i <= i1; i++) set(boxes[i], true); }
+            else if (fromBox) set(cb, cb.checked); else set(cb, !cb.checked);
+            if (!e.shiftKey) lgAnchor = cb; const n2 = $('#lgN'); if (n2) n2.textContent = lgSel.size; };
+          cb.onclick = e => { e.stopPropagation(); if (e.shiftKey) { e.preventDefault(); setTimeout(() => pick(e, true)); } else pick(e, true); };
+          row.addEventListener('click', e => { if (!lgSel || e.target.closest('button,input,select,a')) return; e.preventDefault(); e.stopPropagation(); if (e.shiftKey) document.getSelection().removeAllRanges(); pick(e, false); }, true);
+          row.append(cb); }
         const mo = el('button', 'icon-btn small', '⋯'); mo.title = 'أوامر الطبقة (أو كليك يمين)'; mo.onclick = e => { e.stopPropagation(); const r = mo.getBoundingClientRect(); lyrMenu(l, r.left, r.bottom); }; acts.appendChild(mo);
         row.addEventListener('contextmenu', e => { e.preventDefault(); lyrMenu(l, e.clientX, e.clientY); });
         let lp = null; row.addEventListener('touchstart', e => { const t = e.touches[0]; lp = setTimeout(() => lyrMenu(l, t.clientX, t.clientY), 550); }, { passive: true }); ['touchend', 'touchmove', 'touchcancel'].forEach(ev => row.addEventListener(ev, () => clearTimeout(lp), { passive: true }));
@@ -807,7 +818,7 @@
       const au = el('button', 'chip' + (autoGrp ? ' on' : ''), (autoGrp ? '✓ ' : '') + 'جروب تلقائي لكل ملف أفتحه'); au.onclick = () => { autoGrp = !autoGrp; store.set('gv_autogrp', autoGrp ? '1' : '0'); renderLayers(); };
       bar.append(pf, au); }
     else {
-      bar.appendChild(el('span', 'small', 'علّم على الطبقات (')); const nn = el('b', null, String(lgSel.size)); nn.id = 'lgN'; bar.appendChild(nn); bar.appendChild(el('span', 'small', ')'));
+      bar.title = 'كليك = طبقة · Shift+كليك = من اللي فاتت لحد هنا · Ctrl+كليك = زوّد أو شيل واحدة · Ctrl+A = الكل'; bar.appendChild(el('span', 'small', 'علّم على الطبقات (Shift للمدى · Ctrl للتعدد) (')); const nn = el('b', null, String(lgSel.size)); nn.id = 'lgN'; bar.appendChild(nn); bar.appendChild(el('span', 'small', ')'));
       const nm = el('input'); nm.placeholder = 'اسم الجروب الجديد'; nm.style.cssText = 'max-width:170px';
       const sel = el('select'); const o0 = el('option', null, '— أو ضيفهم لجروب موجود —'); o0.value = ''; sel.appendChild(o0); LG.forEach(g => { const o = el('option', null, g.name); o.value = g.id; sel.appendChild(o); });
       const ok = el('button', 'chip ok', 'تمام'); ok.onclick = () => { if (!lgSel.size) return toast('علّم على طبقة واحدة على الأقل'); const keys = [...lgSel].map(lkey); LG.forEach(g => { g.keys = g.keys.filter(k => keys.indexOf(k) < 0); }); let g = sel.value && LG.find(x => x.id === sel.value); if (!g) { const name = nm.value.trim() || ('جروب ' + (LG.length + 1)); g = { id: Date.now().toString(36), name, keys: [], open: true }; LG.push(g); } g.keys.push(...keys); [...lgSel].forEach(l => { l._grp = g.id; }); LG = LG.filter(x => x.keys.length); saveLG(); lgSel = null; renderLayers(); toast('اتحطوا في جروب «' + g.name + '»'); };
