@@ -234,10 +234,54 @@
     const parser = new P();
     try { const ad = parser._entityHandlers && parser._entityHandlers.ATTDEF; if (ad && !parser._entityHandlers.ATTRIB) parser._entityHandlers.ATTRIB = { ForEntityName: 'ATTRIB', parseEntity: (sc, cur) => { const r = ad.parseEntity(sc, cur); r.type = 'ATTRIB'; return r; } }; } catch (e) { }
     try { if (parser._entityHandlers && !parser._entityHandlers.ACAD_TABLE) parser._entityHandlers.ACAD_TABLE = { ForEntityName: 'ACAD_TABLE', parseEntity: (sc, cur) => { const e = { type: 'ACAD_TABLE', position: { x: 0, y: 0, z: 0 }, dir: { x: 1, y: 0 } }; cur = sc.next(); while (cur !== 'EOF' && cur.code !== 0) { const c = cur.code, v = cur.value; if (c === 8) e.layer = v; else if (c === 2 && !e.name) e.name = v; else if (c === 10) e.position.x = v; else if (c === 20) e.position.y = v; else if (c === 11) e.dir.x = v; else if (c === 21) e.dir.y = v; else if (c === 62) e.colorIndex = v; cur = sc.next(); } e.rotation = Math.atan2(e.dir.y, e.dir.x) * 180 / Math.PI; return e; } }; } catch (e) { }
+    // multileaders (text + leader lines) and old-style leaders, which the DXF reader skips
+    try { if (parser._entityHandlers && !parser._entityHandlers.MULTILEADER) parser._entityHandlers.MULTILEADER = { ForEntityName: 'MULTILEADER', parseEntity: (sc, cur) => {
+      const e = { type: 'MLEADER', lines: [], text: '' }; let inLine = null, sec = '', lastLeaderPt = null;
+      cur = sc.next();
+      while (cur !== 'EOF' && cur.code !== 0) { const c = cur.code, v = cur.value;
+        if (c === 8) e.layer = v; else if (c === 62) e.colorIndex = v;
+        else if (c === 302 && /LEADER\{/.test(v)) sec = 'leader'; else if (c === 304 && /LEADER_LINE\{/.test(v)) { inLine = []; } else if (c === 305) { if (inLine) { if (lastLeaderPt) inLine.push(lastLeaderPt); e.lines.push(inLine); } inLine = null; } else if (c === 303) { sec = ''; lastLeaderPt = null; }
+        else if (c === 304 && !inLine) e.text = (e.text ? e.text + '\\P' : '') + v; else if (c === 3 && e.text && !inLine) e.text += v;
+        else if (c === 10) { if (inLine) inLine.push({ x: v }); else if (sec === 'leader') lastLeaderPt = { x: v }; else if (!e.base) e.base = { x: v }; }
+        else if (c === 20) { const t = inLine ? inLine[inLine.length - 1] : sec === 'leader' ? lastLeaderPt : e.base; if (t && t.y == null) t.y = v; }
+        else if (c === 12) e.position = { x: v }; else if (c === 22 && e.position) e.position.y = v;
+        else if (c === 41 && e.textHeight == null) e.textHeight = v; else if (c === 42) e.rotation = v * 180 / Math.PI; else if (c === 43) e.width = v; else if (c === 171) e.attachmentPoint = v;
+        cur = sc.next(); }
+      if (!e.position) e.position = e.base; return e; } };
+      if (parser._entityHandlers && !parser._entityHandlers.LEADER) parser._entityHandlers.LEADER = { ForEntityName: 'LEADER', parseEntity: (sc, cur) => { const e = { type: 'LEADER', vertices: [] }; cur = sc.next(); while (cur !== 'EOF' && cur.code !== 0) { const c = cur.code, v = cur.value; if (c === 8) e.layer = v; else if (c === 62) e.colorIndex = v; else if (c === 10) e.vertices.push({ x: v }); else if (c === 20 && e.vertices.length) e.vertices[e.vertices.length - 1].y = v; cur = sc.next(); } return e; } };
+    } catch (e) { }
     const dxf = parser.parseSync(text);
     return cadToLayers(dxf);
   }
   const ACI_RGB = { 1: 0xff0000, 2: 0xffff00, 3: 0x00ff00, 4: 0x00ffff, 5: 0x0000ff, 6: 0xff00ff, 7: 0x333333, 8: 0x808080, 9: 0xc0c0c0, 30: 0xff7f00, 40: 0xffbf00, 140: 0x007fff, 200: 0x7f00ff };
+  // AutoCAD proxy graphics (what Civil 3D saves so labels show without Civil 3D): lines and texts, with model transforms
+  function proxyGraphics(raw) {
+    try {
+      if (!raw) return null; let u8;
+      if (raw instanceof Uint8Array) u8 = raw; else if (typeof raw === 'string') { if (/^[0-9a-f]+$/i.test(raw) && raw.length % 2 === 0) { u8 = new Uint8Array(raw.length / 2); for (let i = 0; i < u8.length; i++) u8[i] = parseInt(raw.substr(i * 2, 2), 16); } else { const b = atob(raw); u8 = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u8[i] = b.charCodeAt(i); } } else return null;
+      const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength); const out = { lines: [], texts: [] };
+      const I = o => dv.getInt32(o, true), D = o => dv.getFloat64(o, true), V = o => [D(o), D(o + 8), D(o + 16)];
+      const stack = [null]; const xf = p => { const m = stack[stack.length - 1]; if (!m) return p; return [m[0] * p[0] + m[1] * p[1] + m[2] * p[2] + m[3], m[4] * p[0] + m[5] * p[1] + m[6] * p[2] + m[7], m[8] * p[0] + m[9] * p[1] + m[10] * p[2] + m[11]]; };
+      const mul = (a, b) => { if (!a) return b; const r = []; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let v = 0; for (let k = 0; k < 4; k++) v += a[i * 4 + k] * b[k * 4 + j]; r.push(v); } return r; };
+      const astr = (o, end) => { let t = ''; for (let k = o; k < end && u8[k]; k++) t += String.fromCharCode(u8[k]); return [t, o + ((t.length + 1 + 3) & ~3)]; };
+      const ustr = (o, end) => { let t = ''; let k = o; for (; k + 1 < end; k += 2) { const c = u8[k] | (u8[k + 1] << 8); if (!c) break; t += String.fromCharCode(c); } return [t, o + (((t.length + 1) * 2 + 3) & ~3)]; };
+      let o = 8; const total = Math.min(u8.length, I(0) || u8.length); let color = null, guard = 0;
+      while (o + 8 <= total && guard++ < 200000) {
+        const size = I(o), type = I(o + 4); if (size < 8 || o + size > u8.length) break; const d = o + 8, end = o + size;
+        if (type === 6 || type === 7) { const n = I(d); if (n > 1 && n < 100000 && d + 4 + n * 24 <= end) { const pts = []; for (let k = 0; k < n; k++) pts.push(xf(V(d + 4 + k * 24))); if (type === 7) pts.push(pts[0]); out.lines.push({ pts, color }); } }
+        else if (type === 2) { const c = xf(V(d)), r = D(d + 24); if (r > 0 && r < 1e7) { const pts = []; for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI * 2; pts.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a), c[2]]); } out.lines.push({ pts, color }); } }
+        else if (type === 10 || type === 36) { const p = xf(V(d)), dir = V(d + 48); const h = D(d + 72); const [t] = type === 36 ? ustr(d + 96, end) : astr(d + 96, end); const m = stack[stack.length - 1]; const sc = m ? Math.hypot(m[0], m[4]) : 1; const ang = Math.atan2(m ? m[4] * dir[0] + m[5] * dir[1] : dir[1], m ? m[0] * dir[0] + m[1] * dir[1] : dir[0]); if (t) out.texts.push({ p, t, h: h * sc, rot: ang * 180 / Math.PI, color }); }
+        else if (type === 11 || type === 38) { const p = xf(V(d)), dir = V(d + 48); const [t, o2] = type === 38 ? ustr(d + 72, end) : astr(d + 72, end); const h = o2 + 8 + 8 <= end ? D(o2 + 8) : 0; const m = stack[stack.length - 1]; const sc = m ? Math.hypot(m[0], m[4]) : 1; const ang = Math.atan2(m ? m[4] * dir[0] + m[5] * dir[1] : dir[1], m ? m[0] * dir[0] + m[1] * dir[1] : dir[0]); if (t && h > 0) out.texts.push({ p, t, h: h * sc, rot: ang * 180 / Math.PI, color }); }
+        else if (type === 14) { const c = I(d); color = c > 0 && c < 256 && ACI_RGB[c] != null ? ACI_RGB[c] : null; }
+        else if (type === 22 || type === 23) { const m = []; for (let k = 0; k < 16; k++) m.push(D(d + k * 8)); stack.push(mul(stack[stack.length - 1], m)); }
+        else if (type === 24) { if (stack.length > 1) stack.pop(); }
+        o = end;
+      }
+      const ok = p => p.every(isFinite) && Math.abs(p[0]) < 1e9 && Math.abs(p[1]) < 1e9;
+      out.lines = out.lines.filter(l => l.pts.every(ok)); out.texts = out.texts.filter(t => ok(t.p) && t.h > 0 && t.h < 1e5);
+      return out;
+    } catch (e) { return null; }
+  }
   let dwgLibP = null;
   function getDwgLib() {
     if (!dwgLibP) dwgLibP = (async () => {
@@ -275,7 +319,7 @@
         case 'SPLINE': o.fitPoints = (e.fitPoints || []).map(P); o.controlPoints = (e.controlPoints || []).map(P); break;
         case 'POINT': o.position = P(e.position); break;
         case 'TEXT': o.startPoint = P((e.halign || e.valign) && e.endPoint && (e.endPoint.x || e.endPoint.y) ? e.endPoint : e.startPoint); o.halign = e.halign || 0; o.text = e.text; o.rotation = (e.rotation || 0) * 180 / Math.PI; o.textHeight = e.textHeight; break;
-        case 'MTEXT': o.position = P(e.insertionPoint); o.text = e.text; o.textHeight = e.textHeight; o.attachmentPoint = e.attachmentPoint != null ? e.attachmentPoint : e.attachment; o.rotation = e.rotation != null ? e.rotation * 180 / Math.PI : (e.xAxisDirection ? Math.atan2(e.xAxisDirection.y, e.xAxisDirection.x) * 180 / Math.PI : 0); o.mtext = true; break;
+        case 'MTEXT': o.position = P(e.insertionPoint); o.text = e.text; o.textHeight = e.textHeight; o.attachmentPoint = e.attachmentPoint != null ? e.attachmentPoint : e.attachment; o.width = e.rectWidth; o.rotation = e.rotation != null ? e.rotation * 180 / Math.PI : (e.xAxisDirection ? Math.atan2(e.xAxisDirection.y, e.xAxisDirection.x) * 180 / Math.PI : 0); o.mtext = true; break;
         case 'INSERT': o.name = e.name; o.position = P(e.insertionPoint); o.xScale = e.xScale; o.yScale = e.yScale; o.rotation = (e.rotation || 0) * 180 / Math.PI; o.attribs = (e.attribs || []).map(a => { const tt = a.text && typeof a.text === 'object' ? a.text : { text: a.text }; const al = (tt.halign || 0) !== 0 || (tt.valign || 0) !== 0; const ps = al && tt.endPoint && (tt.endPoint.x || tt.endPoint.y) ? tt.endPoint : tt.startPoint; return { tag: a.tag, text: tt.text, layer: a.layer, color: colorOf(a), position: ps && isFinite(ps.x) ? P(ps) : null, height: tt.textHeight, rotation: (tt.rotation || 0) * 180 / Math.PI, halign: tt.halign || 0, invisible: !!((a.flags || 0) & 1) }; }); break;
         case 'TABLE': case 'ACAD_TABLE': o.type = 'ACAD_TABLE'; o.name = e.name || e.blockName || (e.block && e.block.name) || null; const ip = e.insertionPoint || e.position || e.startPoint; o.position = ip && isFinite(ip.x) && isFinite(ip.y) ? P(ip) : null; o.bh = e.blockRecordHandle || null; if (e.directionVector) o.rotation = Math.atan2(e.directionVector.y || 0, e.directionVector.x || 1) * 180 / Math.PI; o.tw = (e.columnWidthArr || []).reduce((a, b) => a + (+b || 0), 0); o.th = (e.rowHeightArr || []).reduce((a, b) => a + (+b || 0), 0); if (o.position && e.cells && e.cells.some(c => c && c.text) && e.rowCount && e.columnCount) { o.grid = { rows: e.rowCount, cols: e.columnCount, rh: Array.from(e.rowHeightArr || []), cw: Array.from(e.columnWidthArr || []), dir: e.directionVector || { x: 1, y: 0 }, cells: e.cells.map(c => c && c.text != null ? String(c.text) : '') }; break; } if (!o.position) { skippedDWG[e.type] = (skippedDWG[e.type] || 0) + 1; return null; } if (!o.name) o.pending = true; break;
         case 'SOLID': case '3DFACE': o.points = [e.corner1, e.corner2, e.corner3, e.corner4].filter(Boolean).map(P); break;
@@ -288,7 +332,14 @@
           if (!rings.length) return null;
           o.rings = rings; break;
         }
-        default: skippedDWG[e.type] = (skippedDWG[e.type] || 0) + 1; return null;
+        case 'MULTILEADER': o.type = 'MLEADER'; o.text = e.hasMText === false ? '' : (e.textContent || ''); o.position = P(e.textAnchor || e.contentBasePosition); o.textHeight = e.textHeight; o.rotation = (e.textRotation || 0) * 180 / Math.PI; o.attachmentPoint = e.textAttachmentPoint || 1; o.width = e.textWidth;
+          o.lines = []; (e.leaderSections || []).forEach(sc => (sc.leaderLines || []).forEach(ll => { const v = (ll.vertices || []).map(P).filter(Boolean); if (sc.lastLeaderLinePoint) v.push(P(sc.lastLeaderLinePoint)); if (v.length > 1) o.lines.push(v); }));
+          if (e.textColor != null && !o.color) { const tc = e.textColor; if (tc > 0 && tc < 256 && ACI_RGB[tc] != null) o.color = ACI_RGB[tc]; } break;
+        case 'LEADER': o.vertices = (e.vertices || []).map(P); break;
+        case 'ACAD_PROXY_ENTITY': { const g = proxyGraphics(e.graphicsData); if (!g || (!g.lines.length && !g.texts.length)) { skippedDWG['Civil 3D/proxy ' + (e.originalDxfName || '')] = (skippedDWG['Civil 3D/proxy ' + (e.originalDxfName || '')] || 0) + 1; return null; } o.type = 'PROXY'; o.g = g; break; }
+        default:
+          if (/^DIMENSION/.test(e.type) && (e.name || e.blockName)) { o.type = 'DIMENSION'; o.name = e.name || e.blockName; break; }
+          skippedDWG[e.type] = (skippedDWG[e.type] || 0) + 1; return null;
       }
       return o;
     }
@@ -327,7 +378,7 @@
     };
     const v = p => [p.x, p.y];
     const blocks = dxf.blocks || {}; const usedBlocks = new Set();
-    const KNOWN = new Set(['ATTRIB', 'ACAD_TABLE', 'TABLE', 'LINE', 'LWPOLYLINE', 'POLYLINE', 'CIRCLE', 'ARC', 'ELLIPSE', 'SPLINE', 'POINT', 'TEXT', 'MTEXT', 'ATTDEF', 'INSERT', 'HATCH', 'SOLID', '3DFACE']);
+    const KNOWN = new Set(['ATTRIB', 'ACAD_TABLE', 'TABLE', 'LINE', 'LWPOLYLINE', 'POLYLINE', 'CIRCLE', 'ARC', 'ELLIPSE', 'SPLINE', 'POINT', 'TEXT', 'MTEXT', 'ATTDEF', 'INSERT', 'HATCH', 'SOLID', '3DFACE', 'MLEADER', 'MULTILEADER', 'LEADER', 'PROXY', 'DIMENSION']);
     function handle(ent, tf, depth) {
       const T = tf || (p => p);
       if (!depth) { if (!KNOWN.has(ent.type)) cadInfo.skipped[ent.type] = (cadInfo.skipped[ent.type] || 0) + 1; if (ent.type === 'INSERT') { const sx = ent.xScale == null ? 1 : ent.xScale, sy = ent.yScale == null ? 1 : ent.yScale; if (!sx || !sy || Math.abs(sx) > 1000 || Math.abs(sy) > 1000) cadInfo.badInserts++; } }
@@ -353,14 +404,24 @@
         }
         case 'SPLINE': { const ps = ent.fitPoints && ent.fitPoints.length > 1 ? ent.fitPoints : ent.controlPoints; if (ps && ps.length > 1) add(ent, { type: 'LineString', coordinates: ps.map(p => T(v(p))) }); break; }
         case 'POINT': add(ent, { type: 'Point', coordinates: T(v(ent.position)) }); break;
+        case 'LEADER': { const vs = (ent.vertices || []).filter(p => p && isFinite(p.x) && isFinite(p.y)); if (vs.length > 1) add(ent, { type: 'LineString', coordinates: vs.map(p => T(v(p))) }, { Leader: 1 }); break; }
+        case 'MLEADER': {
+          (ent.lines || []).forEach(ln => { const vs = ln.filter(p => p && isFinite(p.x) && isFinite(p.y)); if (vs.length > 1) add(ent, { type: 'LineString', coordinates: vs.map(p => T(v(p))) }, { Leader: 1 }); });
+          if (ent.text && ent.position && isFinite(ent.position.x)) handle({ type: 'MTEXT', layer: ent.layer, color: ent.color, colorIndex: ent.colorIndex, position: ent.position, text: ent.text, textHeight: ent.textHeight || 2.5, rotation: ent.rotation || 0, attachmentPoint: ent.attachmentPoint || 1, width: ent.width, mtext: true }, tf, depth + 1);
+          break; }
+        case 'PROXY': { const g = ent.g;
+          g.lines.forEach(l => add(Object.assign({}, ent, { color: l.color != null ? l.color : ent.color }), { type: 'LineString', coordinates: l.pts.map(p => T([p[0], p[1]])) }, { Proxy: 1 }));
+          g.texts.forEach(t => handle({ type: 'TEXT', layer: ent.layer, color: t.color != null ? t.color : ent.color, startPoint: { x: t.p[0], y: t.p[1], z: 0 }, text: t.t, textHeight: t.h, rotation: t.rot }, tf, depth + 1));
+          break; }
+        case 'DIMENSION': { const bn = ent.block || ent.name; if (!bn || !blocks[bn]) break; handle({ type: 'INSERT', name: bn, layer: ent.layer, color: ent.color, position: { x: 0, y: 0, z: 0 }, xScale: 1, yScale: 1, rotation: 0, _dim: true }, tf, depth + 1); break; }
         case 'TEXT': case 'MTEXT': case 'ATTDEF': case 'ATTRIB': {
           if (ent.type === 'ATTRIB' && ent.invisible) break;
           const hj = ent.halign != null ? ent.halign : ent.horizontalJustification; const vj = ent.valign != null ? ent.valign : ent.verticalJustification;
           const p = (ent.type !== 'MTEXT' && (hj || vj) && ent.endPoint && (ent.endPoint.x || ent.endPoint.y) && !ent.mtext) ? ent.endPoint : (ent.startPoint || ent.position); if (!p) break;
-          const txt = cadTxt(ent.text, ent.type === 'MTEXT' || ent.mtext);
+          const txt = cadTxt(ent.text, true);
           const h = ent.textHeight || ent.height || null; let rot = ent.rotation || 0;
           if (ent.type === 'MTEXT' && !ent.rotation && ent.directionVector) rot = Math.atan2(ent.directionVector.y, ent.directionVector.x) * 180 / Math.PI;
-          const ex = { Text: txt, Height: h != null ? +(+h).toFixed(3) : null, Rotation: +(+rot).toFixed(2) }; if (hj === 1 || hj === 4) ex.Align = 'c'; else if (hj === 2) ex.Align = 'r'; if (ent.type === 'MTEXT' && ent.attachmentPoint) { const ap = +ent.attachmentPoint; const cc = (ap - 1) % 3, rr = Math.floor((ap - 1) / 3); if (cc === 1) ex.Align = 'c'; else if (cc === 2) ex.Align = 'r'; ex.VAlign = rr === 0 ? 't' : rr === 1 ? 'm' : 'b'; } else if (vj === 2) ex.VAlign = 'm'; else if (vj === 3) ex.VAlign = 't'; if (ent.type === 'ATTRIB' && ent.tag) ex.Attrib = ent.tag; add(ent, { type: 'Point', coordinates: T(v(p)) }, ex); break;
+          const ex = { Text: txt, Height: h != null ? +(+h).toFixed(3) : null, Rotation: +(+rot).toFixed(2) }; { const wd = ent.width || ent.rectWidth || ent.referenceRectangleWidth; if ((ent.type === 'MTEXT' || ent.mtext) && wd > 0 && h > 0 && wd < h * 400) ex.Width = +(+wd).toFixed(3); } if (hj === 1 || hj === 4) ex.Align = 'c'; else if (hj === 2) ex.Align = 'r'; if (ent.type === 'MTEXT' && ent.attachmentPoint) { const ap = +ent.attachmentPoint; const cc = (ap - 1) % 3, rr = Math.floor((ap - 1) / 3); if (cc === 1) ex.Align = 'c'; else if (cc === 2) ex.Align = 'r'; ex.VAlign = rr === 0 ? 't' : rr === 1 ? 'm' : 'b'; } else if (vj === 2) ex.VAlign = 'm'; else if (vj === 3) ex.VAlign = 't'; if (ent.type === 'ATTRIB' && ent.tag) ex.Attrib = ent.tag; add(ent, { type: 'Point', coordinates: T(v(p)) }, ex); break;
         }
         case 'HATCH': { const rs = ent.rings.map(r => { const c = r.map(p => T(v(p))); c.push(c[0]); return c; }); add(ent, { type: 'Polygon', coordinates: rs }); break; }
         case 'SOLID': case '3DFACE': { const ps = (ent.points || ent.vertices || []).map(p => T(v(p))); if (ps.length >= 3) { ps.push(ps[0]); add(ent, { type: 'Polygon', coordinates: [ps] }); } break; }
@@ -381,7 +442,7 @@
         case 'INSERT': {
           const pos = v(ent.position); if (!isFinite(pos[0]) || !isFinite(pos[1])) break;
           const attrs = {}; (ent.attribs || []).forEach(a => { if (a.tag) attrs[a.tag] = a.text; });
-          add(ent, { type: 'Point', coordinates: T(pos) }, Object.assign({ Block: ent.name }, attrs));
+          if (!ent._dim) add(ent, { type: 'Point', coordinates: T(pos) }, Object.assign({ Block: ent.name }, attrs));
           if (!depth) { const lst = byLayer[ent.layer || '0']; lst[lst.length - 1]._ins = { sx: ent.xScale || 1, sy: ent.yScale || 1, rot: ent.rotation || 0, attrs: Object.keys(attrs).filter(k => !(ent.attribs || []).some(a => a.tag === k && a.position)) }; usedBlocks.add(ent.name); }
           if (!depth) (ent.attribs || []).forEach(a => { if (!a.position || a.invisible || a.text == null || String(a.text).trim() === '') return; handle({ type: 'ATTRIB', layer: a.layer || ent.layer, color: a.color != null ? a.color : ent.color, startPoint: a.position, text: a.text, textHeight: a.height, rotation: a.rotation, halign: a.halign, tag: a.tag }, tf, depth + 1); });
           const b = blocks[ent.name];
@@ -392,7 +453,7 @@
             const sx = ent.xScale || 1, sy = ent.yScale || 1, rot = (ent.rotation || 0) * Math.PI / 180, bp = b.position ? v(b.position) : [0, 0];
             const cos = Math.cos(rot), sin = Math.sin(rot);
             const tf2 = p => { const x = (p[0] - bp[0]) * sx, y = (p[1] - bp[1]) * sy; return T([pos[0] + x * cos - y * sin, pos[1] + x * sin + y * cos]); };
-            for (const be of b.entities) { if (isTbl && (be.type === 'TEXT' || be.type === 'MTEXT')) { const hh = be.textHeight || be.height; handle(Object.assign({}, be, { layer: (be.layer === '0' || !be.layer) ? ent.layer : be.layer, textHeight: hh ? hh * Math.abs(sx) : hh, height: hh ? hh * Math.abs(sx) : hh, rotation: (be.rotation || 0) + (ent.rotation || 0), directionVector: null }), tf2, depth + 1); continue; } if (be.type === 'TEXT' || be.type === 'ATTDEF' || be.type === 'MTEXT' || be.type === 'POINT') continue; const e2 = Object.assign({}, be, { layer: (be.layer === '0' || !be.layer) ? ent.layer : be.layer, color: be.color != null ? be.color : ent.color, _sym: true }); handleSym(e2, tf2, depth + 1); }
+            for (const be of b.entities) { if (be.type === 'TEXT' || be.type === 'MTEXT') { const hh = be.textHeight || be.height; handle(Object.assign({}, be, { layer: (be.layer === '0' || !be.layer) ? ent.layer : be.layer, textHeight: hh ? hh * Math.abs(sx) : hh, height: hh ? hh * Math.abs(sx) : hh, rotation: (be.rotation || 0) + (ent.rotation || 0), directionVector: null }), tf2, depth + 1); continue; } if (be.type === 'TEXT' || be.type === 'ATTDEF' || be.type === 'MTEXT' || be.type === 'POINT') continue; const e2 = Object.assign({}, be, { layer: (be.layer === '0' || !be.layer) ? ent.layer : be.layer, color: be.color != null ? be.color : ent.color, _sym: true }); handleSym(e2, tf2, depth + 1); }
           }
           break;
         }
@@ -1229,7 +1290,7 @@
           px = Math.min(px, 72);
           const d = document.createElement('div'); d.className = 'anno'; d.textContent = TL.slice(0, 30).map(x => x.slice(0, 120)).join('\n');
           // CAD text height is the capital-letter height; a line of MTEXT takes 5/3 of it
-          d.style.fontSize = (px * 1.4).toFixed(1) + 'px'; d.style.lineHeight = (px * 1.667).toFixed(1) + 'px'; if (TL.length > 1) d.style.whiteSpace = 'pre';
+          d.style.fontSize = (px * 1.4).toFixed(1) + 'px'; d.style.lineHeight = (px * 1.667).toFixed(1) + 'px'; if (TL.length > 1) d.style.whiteSpace = 'pre'; { const wd = (f.properties.Width || 0) * sc / mpp; if (wd > px * 2) { d.style.whiteSpace = 'pre-wrap'; d.style.width = wd.toFixed(1) + 'px'; d.textContent = String(t).slice(0, 2000); } }
           const col = f._color || l.color || '#333'; d.style.color = lumin(col) > 0.72 ? '#334' : col;
           const rot = -(f.properties.Rotation || 0); const al = f.properties.Align, va = f.properties.VAlign; const tx = al === 'c' ? '-50%' : al === 'r' ? '-100%' : '0'; const ty = va === 'm' ? '-50%' : va === 't' ? '0' : '-100%'; if (al || va) d.style.transformOrigin = (al === 'c' ? '50%' : al === 'r' ? '100%' : '0') + ' ' + (va === 'm' ? '50%' : va === 't' ? '0' : '100%'); if (rot || al || va) d.style.transform = 'translate(' + tx + ',' + ty + ')' + (rot ? ' rotate(' + rot + 'deg)' : '');
           L.marker(f._lbl, { icon: L.divIcon({ className: 'lbl-wrap', html: d, iconSize: null }), interactive: false, keyboard: false }).addTo(labelGroup);
