@@ -296,6 +296,7 @@
           const ec = f.color ? aci(f.color) : null; const ecol = ec && ec !== layerDefs.get(ln) ? ec : null;
           const g = f.geometry; if (!g) return;
           const pr = f.properties || {};
+          if (pr.Text != null && g.type === 'Point' && /\n/.test(String(pr.Text))) { const c = g.coordinates; const ap = { t: 1, m: 4, b: 7 }[pr.VAlign || 't'] + ({ c: 1, r: 2 }[pr.Align] || 0); E(() => { w(0, 'MTEXT'); w(8, ln); if (ecol) w(62, ecol); w(10, c[0]); w(20, c[1]); w(30, c[2] || 0); w(40, pr.Height || o.textH); w(71, ap); w(1, String(pr.Text).split('\n').map(dxfText).join('\\P')); if (pr.Rotation) w(50, pr.Rotation * Math.PI / 180); }); return; }
           if (pr.Text != null && g.type === 'Point') { const c = g.coordinates; E(() => { w(0, 'TEXT'); w(8, ln); if (ecol) w(62, ecol); w(10, c[0]); w(20, c[1]); w(30, c[2] || 0); w(40, pr.Height || o.textH); w(1, dxfText(pr.Text)); if (pr.Rotation) w(50, pr.Rotation); }); return; }
           if (f.ins && pr.Block && o.blocks && o.blocks[pr.Block]) {
             const bn = dxfLayer(pr.Block).slice(0, 250); usedB.add(pr.Block); const c = g.coordinates; const tags = (f.ins.attrs || []).filter(k => pr[k] != null);

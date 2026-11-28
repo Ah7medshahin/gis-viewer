@@ -315,7 +315,8 @@
     return res;
   }
   // AutoCAD text codes → plain text (MTEXT formatting, %%U underline, %%C Ø, %%D °, %%P ±, %%% %)
-  function cadTxt(t) { return String(t == null ? '' : t).replace(/\\P/g, ' ').replace(/\\[ACcFfHhQqTtWwLlOoKk][^;\\]*;?/g, '').replace(/\\S([^;]*);/g, '$1').replace(/\\[A-Za-z][^;]*;/g, '').replace(/[{}]/g, '').replace(/%%[uUoOkK]/g, '').replace(/%%[cC]/g, 'Ø').replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%%/g, '%').replace(/%%(\d{3})/g, (m, d) => String.fromCharCode(+d)).replace(/\s+/g, ' ').trim(); }
+  function cadTxt(t, lines) { return cadTxt0(String(t == null ? '' : t).replace(/\\P/g, lines ? '\u2029' : ' ')).replace(/ ?\u2029 ?/g, '\n').replace(/\n{2,}/g, '\n').trim(); }
+  function cadTxt0(t) { return String(t).replace(/\\[ACcFfHhQqTtWwLlOoKk][^;\\\u2029]*;?/g, '').replace(/\\S([^;]*);/g, '$1').replace(/\\[A-Za-z][^;\u2029]*;/g, '').replace(/[{}]/g, '').replace(/%%[uUoOkK]/g, '').replace(/%%[cC]/g, 'Ø').replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%%/g, '%').replace(/%%(\d{3})/g, (m, d) => String.fromCharCode(+d)).replace(/[^\S\u2029]+/g, ' ').trim(); }
   function cadToLayers(dxf) {
     const cadInfo = { skipped: {}, badInserts: 0, failed: 0 };
     const layerTab = (dxf.tables && dxf.tables.layer && dxf.tables.layer.layers) || {};
@@ -356,7 +357,7 @@
           if (ent.type === 'ATTRIB' && ent.invisible) break;
           const hj = ent.halign != null ? ent.halign : ent.horizontalJustification; const vj = ent.valign != null ? ent.valign : ent.verticalJustification;
           const p = (ent.type !== 'MTEXT' && (hj || vj) && ent.endPoint && (ent.endPoint.x || ent.endPoint.y) && !ent.mtext) ? ent.endPoint : (ent.startPoint || ent.position); if (!p) break;
-          const txt = cadTxt(ent.text);
+          const txt = cadTxt(ent.text, ent.type === 'MTEXT' || ent.mtext);
           const h = ent.textHeight || ent.height || null; let rot = ent.rotation || 0;
           if (ent.type === 'MTEXT' && !ent.rotation && ent.directionVector) rot = Math.atan2(ent.directionVector.y, ent.directionVector.x) * 180 / Math.PI;
           const ex = { Text: txt, Height: h != null ? +(+h).toFixed(3) : null, Rotation: +(+rot).toFixed(2) }; if (hj === 1 || hj === 4) ex.Align = 'c'; else if (hj === 2) ex.Align = 'r'; if (ent.type === 'MTEXT' && ent.attachmentPoint) { const ap = +ent.attachmentPoint; const cc = (ap - 1) % 3, rr = Math.floor((ap - 1) / 3); if (cc === 1) ex.Align = 'c'; else if (cc === 2) ex.Align = 'r'; ex.VAlign = rr === 0 ? 't' : rr === 1 ? 'm' : 'b'; } else if (vj === 2) ex.VAlign = 'm'; else if (vj === 3) ex.VAlign = 't'; if (ent.type === 'ATTRIB' && ent.tag) ex.Attrib = ent.tag; add(ent, { type: 'Point', coordinates: T(v(p)) }, ex); break;
@@ -1222,11 +1223,13 @@
           if (!bounds.contains(f._lbl)) continue;
           const hM = (f.properties.Height || 0) * sc;
           let px = hM > 0 ? hM / mpp : 11;
-          if (px < 4) { if (px >= 0.6 && tinyN < 4000) { tinyN++; const w = Math.max(2, String(t).length * px * 0.62); const d = document.createElement('div'); d.className = 'anno-tiny'; d.style.width = w.toFixed(1) + 'px'; d.style.height = Math.max(1, px * 0.7).toFixed(1) + 'px'; d.style.background = f._color || l.color || '#333'; const rot = -(f.properties.Rotation || 0); d.style.transform = 'translateY(-100%)' + (rot ? ' rotate(' + rot + 'deg)' : ''); L.marker(f._lbl, { icon: L.divIcon({ className: 'lbl-wrap', html: d, iconSize: null }), interactive: false, keyboard: false }).addTo(labelGroup); } continue; }
+          const TL = String(t).split('\n'); const longest = TL.reduce((a, x) => Math.max(a, x.length), 0);
+          if (px < 4) { if (px >= 0.6 && tinyN < 4000) { tinyN++; const w = Math.max(2, longest * px * 0.62); const d = document.createElement('div'); d.className = 'anno-tiny'; d.style.width = w.toFixed(1) + 'px'; d.style.height = Math.max(1, px * (TL.length > 1 ? 1.667 * TL.length - 0.667 : 0.7)).toFixed(1) + 'px'; d.style.background = f._color || l.color || '#333'; const rot = -(f.properties.Rotation || 0); d.style.transform = 'translateY(-100%)' + (rot ? ' rotate(' + rot + 'deg)' : ''); L.marker(f._lbl, { icon: L.divIcon({ className: 'lbl-wrap', html: d, iconSize: null }), interactive: false, keyboard: false }).addTo(labelGroup); } continue; }
           if (annoN > 2500) { skipped = true; break; }
           px = Math.min(px, 72);
-          const d = document.createElement('div'); d.className = 'anno'; d.textContent = String(t).slice(0, 80);
-          d.style.fontSize = px.toFixed(1) + 'px';
+          const d = document.createElement('div'); d.className = 'anno'; d.textContent = TL.slice(0, 30).map(x => x.slice(0, 120)).join('\n');
+          // CAD text height is the capital-letter height; a line of MTEXT takes 5/3 of it
+          d.style.fontSize = (px * 1.4).toFixed(1) + 'px'; d.style.lineHeight = (px * 1.667).toFixed(1) + 'px'; if (TL.length > 1) d.style.whiteSpace = 'pre';
           const col = f._color || l.color || '#333'; d.style.color = lumin(col) > 0.72 ? '#334' : col;
           const rot = -(f.properties.Rotation || 0); const al = f.properties.Align, va = f.properties.VAlign; const tx = al === 'c' ? '-50%' : al === 'r' ? '-100%' : '0'; const ty = va === 'm' ? '-50%' : va === 't' ? '0' : '-100%'; if (al || va) d.style.transformOrigin = (al === 'c' ? '50%' : al === 'r' ? '100%' : '0') + ' ' + (va === 'm' ? '50%' : va === 't' ? '0' : '100%'); if (rot || al || va) d.style.transform = 'translate(' + tx + ',' + ty + ')' + (rot ? ' rotate(' + rot + 'deg)' : '');
           L.marker(f._lbl, { icon: L.divIcon({ className: 'lbl-wrap', html: d, iconSize: null }), interactive: false, keyboard: false }).addTo(labelGroup);
